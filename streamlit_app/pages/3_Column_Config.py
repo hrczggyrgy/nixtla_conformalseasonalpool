@@ -86,8 +86,8 @@ for col, (key, label, icon) in [
     (c2, ("value_col", "Value Column", "🎯")),
     (c3, ("id_col", "Series ID", "🔑")),
 ]:
-    col_name = detected[key[0]]
-    confidence, reason = get_detection_confidence(df, col_name, key[0])
+    col_name = detected[key]
+    confidence, reason = get_detection_confidence(df, col_name, key)
     
     confidence_colors = {"high": "#10b981", "medium": "#f59e0b", "low": "#ef4444"}
     confidence_labels = {"high": "🟢 High", "medium": "🟡 Medium", "low": "🔴 Low"}
