@@ -12,7 +12,7 @@ def create_forecast_download(
     model_name: str,
 ) -> Dict[str, bytes]:
     """Create downloadable files for forecast results."""
-    timestamp = datetime.now().strftime("%Y%m_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Forecast CSV
     forecast_csv = forecast_df.to_csv(index=False).encode("utf-8")
@@ -66,7 +66,7 @@ def create_comparison_download(
     config: Dict,
 ) -> Dict[str, bytes]:
     """Create downloadable files for model comparison."""
-    timestamp = datetime.now().strftime("%Y%m_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Merge forecasts
     all_forecasts = pd.concat([csp_forecast, sn_forecast], ignore_index=True)
@@ -117,7 +117,7 @@ def create_eda_download(
     eda_summary: Dict,
 ) -> Dict[str, bytes]:
     """Create downloadable files for EDA results."""
-    timestamp = datetime.now().strftime("%Y%m_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Raw data
     raw_csv = raw_df.to_csv(index=False).encode("utf-8")
@@ -161,7 +161,7 @@ def create_model_card(
     metrics: Optional[Dict] = None,
 ) -> Dict[str, bytes]:
     """Create a model card with all relevant info."""
-    timestamp = datetime.now().strftime("%Y%m_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Main report
     report = f"""# {model_name} Model Card

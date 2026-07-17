@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 
 from streamlit_app.utils.forecasting import run_csp_with_config, get_model_name
-from streamlit_app.utils.plotting import plot_forecast_with_intervals
+from streamlit_app.utils.plotting import create_forecast_plot
 from streamlit_app.utils.export import create_forecast_download
 
 # Ensure session state is initialized
@@ -142,12 +142,17 @@ if st.session_state.csp_results is not None:
         model_name=model_name,
     )
     
+    # Get the actual keys (they contain timestamps)
+    forecast_key = [k for k in download_files if k.endswith("_forecast_") and k.endswith(".csv")][0]
+    status_key = [k for k in download_files if k.endswith("_status_") and k.endswith(".csv")][0]
+    excel_key = [k for k in download_files if k.endswith("_results_") and k.endswith(".xlsx")][0]
+    
     c1, c2, c3 = st.columns(3)
     
     with c1:
         st.download_button(
             "Forecast CSV",
-            data=download_files[f"{model_name}_forecast_*.csv".replace("*", "")],
+            data=download_files[forecast_key],
             file_name=f"{model_name}_forecast.csv",
             mime="text/csv",
             use_container_width=True,
@@ -156,7 +161,7 @@ if st.session_state.csp_results is not None:
     with c2:
         st.download_button(
             "Status CSV",
-            data=download_files[f"{model_name}_status_*.csv".replace("*", "")],
+            data=download_files[status_key],
             file_name=f"{model_name}_status.csv",
             mime="text/csv",
             use_container_width=True,
@@ -165,7 +170,7 @@ if st.session_state.csp_results is not None:
     with c3:
         st.download_button(
             "Full Excel",
-            data=download_files[f"{model_name}_results_*.xlsx".replace("*", "")],
+            data=download_files[excel_key],
             file_name=f"{model_name}_results.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,

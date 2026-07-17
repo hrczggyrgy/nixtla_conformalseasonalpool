@@ -189,17 +189,35 @@ if st.session_state.csp_results and st.session_state.sn_results:
     st.divider()
     st.subheader("Download Comparison Results")
     
+    # Build config dict for export
+    config_dict = {
+        "h": cfg.h,
+        "levels": cfg.levels,
+        "min_obs_per_series": cfg.min_obs_per_series,
+        "max_series_per_batch": cfg.max_series_per_batch,
+        "outlier_clip": cfg.outlier_clip,
+        "outlier_iqr_mult": cfg.outlier_iqr_mult,
+        "random_seed": cfg.random_seed,
+        "verbose": cfg.verbose,
+    }
+    
     download_files = create_comparison_download(
         csp_forecast=csp_res.forecast_df,
         sn_forecast=sn_res.forecast_df,
-        config=csp_res.config,
+        csp_status=csp_res.status,
+        sn_status=sn_res.status,
+        config=config_dict,
     )
+    
+    # Get actual keys from download_files
+    csv_key = [k for k in download_files if k.endswith("_forecasts_") and k.endswith(".csv")][0]
+    excel_key = [k for k in download_files if k.endswith("_results_") and k.endswith(".xlsx")][0]
     
     c1, c2 = st.columns(2)
     with c1:
         st.download_button(
             "Comparison CSV",
-            data=download_files["comparison_forecast_*.csv".replace("*", "")],
+            data=download_files[csv_key],
             file_name=f"comparison_{selected_series}.csv",
             mime="text/csv",
             use_container_width=True,
@@ -207,7 +225,7 @@ if st.session_state.csp_results and st.session_state.sn_results:
     with c2:
         st.download_button(
             "Full Comparison Excel",
-            data=download_files["comparison_all_*.xlsx".replace("*", "")],
+            data=download_files[excel_key],
             file_name=f"comparison_{selected_series}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
