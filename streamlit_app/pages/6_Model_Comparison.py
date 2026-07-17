@@ -124,7 +124,8 @@ if st.session_state.csp_results and st.session_state.sn_results:
         csp_forecast=csp_res.forecast_df,
         sn_forecast=sn_res.forecast_df,
         series_id=selected_series,
-        levels=cfg.levels,
+        model_name="y",
+        history_len=100,
     )
     st.plotly_chart(fig, use_container_width=True)
     
