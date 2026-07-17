@@ -37,10 +37,12 @@ if st.session_state.processed_df is None:
     st.warning("Please prepare data on the Column Config page first.")
     st.stop()
 
-pdf = st.session_state.processed_df
+raw_df = st.session_state.raw_df
+col_config = st.session_state.col_config
 cfg = st.session_state.forecast_cfg
 
-# Series selector
+# Series selector (use processed_df for available series)
+pdf = st.session_state.processed_df
 if pdf['unique_id'].nunique() > 1:
     series_options = pdf['unique_id'].unique().tolist()
     selected_series = st.selectbox("Select Series for Comparison", series_options, key="cmp_series_select")
@@ -129,7 +131,10 @@ run_col1, run_col2 = st.columns([3, 1])
 with run_col1:
     if st.button("Run All Models", type="primary", use_container_width=True):
         with st.spinner(f"Running all models (timeout: {timeout}s each)..."):
-            results = run_all_models(pdf, cfg, timeout=timeout)
+            results = run_all_models(raw_df, cfg, timeout=timeout, 
+                                    date_col=col_config.get("date_col"),
+                                    value_col=col_config.get("value_col"),
+                                    id_col=col_config.get("id_col"))
             
             # Store results
             for model_key, result in results.items():

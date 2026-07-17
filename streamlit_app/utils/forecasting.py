@@ -178,6 +178,9 @@ def run_all_models(
     cfg: "CSPConfig",
     timeout: int = 120,
     include_slow: bool = False,
+    date_col: Optional[str] = None,
+    value_col: Optional[str] = None,
+    id_col: Optional[str] = None,
 ) -> Dict[str, Optional["ForecastResult"]]:
     """Run all models: CSP, SeasonalNaive, AutoETS, AutoTheta (AutoARIMA is optional/slow)."""
     from statsforecast.models import SeasonalNaive, AutoETS, AutoTheta
@@ -186,12 +189,24 @@ def run_all_models(
 
     # CSP
     try:
-        csp_result = run_csp_with_config(df, cfg)
+        csp_result = run_csp_with_config(df, cfg, date_col=date_col, value_col=value_col, id_col=id_col)
         results["CSP"] = csp_result
     except Exception:
         results["CSP"] = None
 
-    # Fast models: SeasonalNaive, AutoETS, AutoTheta (run sequentially to avoid GIL contention)
+    # Prepare long format data for other models
+    from csp_universal_forecast import _infer_freq, _prepare_long_df
+    if date_col is None:
+        date_col = cfg.date_col or _detect_date_column(df)
+    if value_col is None:
+        value_col = cfg.value_col
+    if id_col is None:
+        id_col = cfg.id_col
+    
+    freq = _infer_freq(df[date_col])
+    long_df = _prepare_long_df(df, date_col, value_col, id_col, freq, cfg)
+
+    # Fast models: SeasonalNaive, AutoETS, AutoTheta
     fast_models = [
         ("SeasonalNaive", SeasonalNaive, "SeasonalNaive"),
         ("AutoETS", AutoETS, "AutoETS"),
@@ -200,7 +215,7 @@ def run_all_models(
 
     for name, model_class, name in fast_models:
         try:
-            results[name] = _run_single_model(df, cfg, model_class, name, timeout=60)
+            results[name] = _run_single_model(long_df, cfg, model_class, name, timeout=60)
         except Exception:
             results[name] = None
 
