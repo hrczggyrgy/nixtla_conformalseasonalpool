@@ -16,9 +16,27 @@ class ForecastResult:
 def run_csp_with_config(
     df: pd.DataFrame,
     cfg: CSPConfig,
+    date_col: Optional[str] = None,
+    value_col: Optional[str] = None,
+    id_col: Optional[str] = None,
 ) -> ForecastResult:
-    """Run CSP forecast with the given config."""
-    forecast_df, status, _ = run_csp_forecast(df, cfg=cfg)
+    """Run CSP forecast with the given config and optional column overrides."""
+    # Create a copy of the config with column overrides
+    cfg_copy = CSPConfig(
+        h=cfg.h,
+        levels=cfg.levels,
+        min_obs_per_series=cfg.min_obs_per_series,
+        max_series_per_batch=cfg.max_series_per_batch,
+        outlier_clip=cfg.outlier_clip,
+        outlier_iqr_mult=cfg.outlier_iqr_mult,
+        random_seed=cfg.random_seed,
+        verbose=cfg.verbose,
+        date_col=date_col,
+        value_col=value_col,
+        id_col=id_col,
+    )
+    
+    forecast_df, status, _ = run_csp_forecast(df, cfg=cfg_copy)
 
     model_col = [c for c in forecast_df.columns if c not in ["unique_id", "ds"] and "-lo-" not in c and "-hi-" not in c]
     model_name = model_col[0] if model_col else "CSP"

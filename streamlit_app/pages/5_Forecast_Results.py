@@ -24,19 +24,29 @@ if "forecast_cfg" not in st.session_state or st.session_state.forecast_cfg is No
 st.title("Forecast Results")
 st.caption("Run CSP forecasting and visualize results with confidence intervals.")
 
-if st.session_state.processed_df is None:
-    st.warning("Please prepare data on the Column Config page first.")
+if st.session_state.raw_df is None:
+    st.warning("Please upload data on the Data Upload page first.")
     st.stop()
 
-pdf = st.session_state.processed_df
+if st.session_state.col_config is None:
+    st.warning("Please configure columns on the Column Config page first.")
+    st.stop()
+
+raw_df = st.session_state.raw_df
+col_config = st.session_state.col_config
 cfg = st.session_state.forecast_cfg
 
-# Series selector
-if pdf['unique_id'].nunique() > 1:
-    series_options = pdf['unique_id'].unique().tolist()
-    selected_series = st.selectbox("Select Series", series_options, key="fcst_series_select")
+# Series selector (use processed_df for available series)
+if st.session_state.processed_df is not None:
+    pdf = st.session_state.processed_df
+    if pdf['unique_id'].nunique() > 1:
+        series_options = pdf['unique_id'].unique().tolist()
+        selected_series = st.selectbox("Select Series", series_options, key="fcst_series_select")
+    else:
+        selected_series = pdf['unique_id'].unique()[0]
 else:
-    selected_series = pdf['unique_id'].unique()[0]
+    st.warning("Please prepare data on the Column Config page first.")
+    st.stop()
 
 # Run button
 col1, col2, col3 = st.columns([2, 1, 1])
@@ -53,7 +63,13 @@ with col3:
 if run_clicked:
     with st.spinner("Running CSP forecast..."):
         try:
-            result = run_csp_with_config(pdf, cfg)
+            # Pass raw data with column config to forecasting function
+            result = run_csp_with_config(
+                raw_df, cfg, 
+                date_col=col_config.get("date_col"),
+                value_col=col_config.get("value_col"),
+                id_col=col_config.get("id_col")
+            )
             st.session_state.csp_results = {
                 "forecast_df": result.forecast_df,
                 "status": result.status,
