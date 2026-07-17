@@ -23,7 +23,8 @@ DEFAULT_CSP_CONFIG = {
 
 CONFIDENCE_LEVEL_OPTIONS = [80, 90, 95, 99]
 
-SAMPLE_DATA_PATH = "/home/lptop/Documents/coding/CSP/timeseries1.csv"
+import os
+SAMPLE_DATA_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "timeseries1.csv")
 
 PAGE_TITLE = "CSP Universal Forecast"
 PAGE_ICON = ""
