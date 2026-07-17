@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 
 from streamlit_app.utils.forecasting import run_csp_with_config, run_seasonal_naive_with_config, compute_backtest_metrics
-from streamlit_app.utils.plotting import plot_model_comparison, plot_metrics_comparison
+from streamlit_app.utils.plotting import create_comparison_plot, create_metric_comparison_bar
 from streamlit_app.utils.export import create_comparison_download
 
 # Ensure session state is initialized
@@ -119,8 +119,8 @@ if st.session_state.csp_results and st.session_state.sn_results:
     st.divider()
     st.subheader("Forecast Comparison")
     
-    fig = plot_model_comparison(
-        historical=pdf,
+    fig = create_comparison_plot(
+        history_df=pdf,
         csp_forecast=csp_res.forecast_df,
         sn_forecast=sn_res.forecast_df,
         series_id=selected_series,
@@ -140,7 +140,8 @@ if st.session_state.csp_results and st.session_state.sn_results:
         st.dataframe(metrics_df, use_container_width=True)
         
         # Chart
-        fig_metrics = plot_metrics_comparison(metrics)
+        metrics_df = pd.DataFrame(metrics).T.round(4)
+        fig_metrics = create_metric_comparison_bar(metrics_df, "MAE")
         st.plotly_chart(fig_metrics, use_container_width=True)
         
         # Best model

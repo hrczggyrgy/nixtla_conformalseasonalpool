@@ -97,11 +97,10 @@ if st.session_state.csp_results is not None:
     # Plot
     st.subheader(f"{model_name} Forecast - {selected_series}")
     
-    fig = plot_forecast_with_intervals(
-        historical=series_hist,
-        forecast=series_fcst,
-        levels=config["levels"],
-        series_id=selected_series,
+    fig = create_forecast_plot(
+        forecast_df=series_fcst,
+        history_df=series_hist,
+        series_ids=[selected_series],
         model_name=model_name,
     )
     st.plotly_chart(fig, use_container_width=True)
