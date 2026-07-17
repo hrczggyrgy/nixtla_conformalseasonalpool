@@ -33,6 +33,9 @@ render_top_bar()
 
 # Navigation pages
 pages = {
+    "Home": [
+        st.Page("streamlit_app/pages/0_Home.py", title="Home"),
+    ],
     "Data Upload": [
         st.Page("streamlit_app/pages/1_Data_Upload.py", title="Data Upload"),
     ],
