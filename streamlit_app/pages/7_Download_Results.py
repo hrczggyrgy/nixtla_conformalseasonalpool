@@ -3,6 +3,14 @@ import pandas as pd
 
 from streamlit_app.utils.export import create_forecast_download, create_comparison_download, to_excel_bytes
 
+# Ensure session state is initialized
+from streamlit_app.config import SESSION_KEYS, DEFAULT_CSP_CONFIG
+for key in SESSION_KEYS:
+    if key not in st.session_state:
+        st.session_state[key] = None
+if "forecast_cfg" not in st.session_state or st.session_state.forecast_cfg is None:
+    from csp_universal_forecast import CSPConfig
+    st.session_state.forecast_cfg = CSPConfig(**DEFAULT_CSP_CONFIG)
 
 st.title("Download Results")
 st.caption("Export forecasts, comparisons, and configuration in various formats.")

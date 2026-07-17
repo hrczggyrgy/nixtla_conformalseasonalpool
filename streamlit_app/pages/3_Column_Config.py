@@ -4,6 +4,14 @@ import pandas as pd
 from streamlit_app.utils.data_loader import auto_detect_columns, infer_frequency, prepare_long_dataframe, validate_column_selection
 from csp_universal_forecast import CSPConfig
 
+# Ensure session state is initialized
+from streamlit_app.config import SESSION_KEYS, DEFAULT_CSP_CONFIG
+for key in SESSION_KEYS:
+    if key not in st.session_state:
+        st.session_state[key] = None
+if "forecast_cfg" not in st.session_state or st.session_state.forecast_cfg is None:
+    st.session_state.forecast_cfg = CSPConfig(**DEFAULT_CSP_CONFIG)
+
 st.title("Column Configuration")
 st.caption("Map your data columns to the required format: date, value, and optional series ID.")
 

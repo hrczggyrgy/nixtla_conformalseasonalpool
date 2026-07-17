@@ -8,6 +8,15 @@ from scipy.signal import periodogram, find_peaks
 from statsmodels.tsa.stattools import acf, pacf, adfuller
 from statsmodels.tsa.seasonal import seasonal_decompose
 
+# Ensure session state is initialized
+from streamlit_app.config import SESSION_KEYS, DEFAULT_CSP_CONFIG
+for key in SESSION_KEYS:
+    if key not in st.session_state:
+        st.session_state[key] = None
+if "forecast_cfg" not in st.session_state or st.session_state.forecast_cfg is None:
+    from csp_universal_forecast import CSPConfig
+    st.session_state.forecast_cfg = CSPConfig(**DEFAULT_CSP_CONFIG)
+
 st.title("Exploratory Data Analysis")
 st.caption("Explore your time series data before forecasting.")
 

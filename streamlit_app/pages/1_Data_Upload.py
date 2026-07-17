@@ -3,6 +3,15 @@ import pandas as pd
 
 from streamlit_app.utils.data_loader import load_dataframe, load_sample_data, get_dataframe_info
 
+# Ensure session state is initialized
+from streamlit_app.config import SESSION_KEYS, DEFAULT_CSP_CONFIG
+for key in SESSION_KEYS:
+    if key not in st.session_state:
+        st.session_state[key] = None
+if "forecast_cfg" not in st.session_state or st.session_state.forecast_cfg is None:
+    from csp_universal_forecast import CSPConfig
+    st.session_state.forecast_cfg = CSPConfig(**DEFAULT_CSP_CONFIG)
+
 st.title("Data Upload")
 st.caption("Upload your time series data or use the built-in sample dataset.")
 
