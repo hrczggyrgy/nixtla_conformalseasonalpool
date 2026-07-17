@@ -30,6 +30,11 @@ df = st.session_state.raw_df
 # Auto-detect columns with confidence
 detected = auto_detect_columns(df)
 
+# Ensure all expected keys exist
+for k in ["date_col", "value_col", "id_col"]:
+    if k not in detected:
+        detected[k] = None
+
 def get_detection_confidence(df, col_name, col_type):
     """Calculate confidence score for auto-detection."""
     if not col_name:
