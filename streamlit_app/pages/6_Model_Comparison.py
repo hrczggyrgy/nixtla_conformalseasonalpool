@@ -24,6 +24,10 @@ if "forecast_cfg" not in st.session_state or st.session_state.forecast_cfg is No
 st.title("Model Comparison")
 st.caption("Compare CSP vs SeasonalNaive forecasts and evaluate performance.")
 
+st.info("ℹ️ **Note:** CSP (ConformalSeasonalPool) uses SeasonalNaive as its base point forecaster. "
+        "Point forecasts will be identical, but **CSP provides wider, conformal prediction intervals** "
+        "with finite-sample coverage guarantees.")
+
 if st.session_state.processed_df is None:
     st.warning("Please prepare data on the Column Config page first.")
     st.stop()
@@ -122,22 +126,22 @@ if st.session_state.csp_results and st.session_state.sn_results:
     
     c1, c2 = st.columns(2)
     with c1:
-        csp_status = csp_res.status.get(selected_series, "unknown")
+        csp_status = csp_res["status"].get(selected_series, "unknown")
         if csp_status == "ok":
             st.success(f"CSP: {csp_status}")
         elif csp_status.startswith("fallback"):
             st.warning(f"CSP: {csp_status}")
         else:
             st.error(f"CSP: {csp_status}")
-        st.caption(f"Model: {csp_res.model_name}")
+        st.caption(f"Model: {csp_res['model_name']}")
     
     with c2:
-        sn_status = sn_res.status.get(selected_series, "unknown")
+        sn_status = sn_res["status"].get(selected_series, "unknown")
         if sn_status == "ok":
             st.success(f"SeasonalNaive: {sn_status}")
         else:
             st.error(f"SeasonalNaive: {sn_status}")
-        st.caption(f"Model: {sn_res.model_name}")
+        st.caption(f"Model: {sn_res['model_name']}")
     
     # Comparison plot
     st.divider()
@@ -145,8 +149,8 @@ if st.session_state.csp_results and st.session_state.sn_results:
     
     fig = create_comparison_plot(
         history_df=pdf,
-        csp_forecast=csp_res.forecast_df,
-        sn_forecast=sn_res.forecast_df,
+        csp_forecast=csp_res["forecast_df"],
+        sn_forecast=sn_res["forecast_df"],
         series_id=selected_series,
         model_name="y",
         history_len=100,
@@ -193,8 +197,8 @@ if st.session_state.csp_results and st.session_state.sn_results:
     tab1, tab2 = st.tabs(["CSP", "SeasonalNaive"])
     
     with tab1:
-        csp_fcst = csp_res.forecast_df[csp_res.forecast_df['unique_id'] == selected_series]
-        pred_col = csp_res.model_name
+        csp_fcst = csp_res["forecast_df"][csp_res["forecast_df"]['unique_id'] == selected_series]
+        pred_col = csp_res["model_name"]
         display_cols = ['ds', pred_col]
         for level in sorted(cfg.levels):
             lo = f"{pred_col}-lo-{level}"
@@ -205,8 +209,8 @@ if st.session_state.csp_results and st.session_state.sn_results:
         st.dataframe(csp_fcst[display_cols].reset_index(drop=True), use_container_width=True, hide_index=True)
     
     with tab2:
-        sn_fcst = sn_res.forecast_df[sn_res.forecast_df['unique_id'] == selected_series]
-        pred_col = sn_res.model_name
+        sn_fcst = sn_res["forecast_df"][sn_res["forecast_df"]['unique_id'] == selected_series]
+        pred_col = sn_res["model_name"]
         display_cols = ['ds', pred_col]
         for level in sorted(cfg.levels):
             lo = f"{pred_col}-lo-{level}"
@@ -233,10 +237,10 @@ if st.session_state.csp_results and st.session_state.sn_results:
     }
     
     download_files = create_comparison_download(
-        csp_forecast=csp_res.forecast_df,
-        sn_forecast=sn_res.forecast_df,
-        csp_status=csp_res.status,
-        sn_status=sn_res.status,
+        csp_forecast=csp_res["forecast_df"],
+        sn_forecast=sn_res["forecast_df"],
+        csp_status=csp_res["status"],
+        sn_status=sn_res["status"],
         config=config_dict,
     )
     
