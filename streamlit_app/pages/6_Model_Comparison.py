@@ -170,7 +170,15 @@ with run_col2:
             st.rerun()
 
 # Check if we have results
-available_models = [m for m in ALL_MODELS if st.session_state.get(f"{m.lower()}_results") is not None]
+available_models = []
+for m in ALL_MODELS:
+    key = f"{m.lower()}_results"
+    # Check for ForecastResult object (from this page)
+    if st.session_state.get(key) is not None:
+        available_models.append(m)
+    # Also check for dict format from Forecast Results page (csp_results)
+    elif m == "CSP" and st.session_state.get("csp_results") is not None:
+        available_models.append(m)
 
 if available_models:
     st.divider()

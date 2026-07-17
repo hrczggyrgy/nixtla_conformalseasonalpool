@@ -22,7 +22,7 @@ def run_csp_with_config(
     date_col: Optional[str] = None,
     value_col: Optional[str] = None,
     id_col: Optional[str] = None,
-) -> ForecastResult:
+) -> Optional["ForecastResult"]:
     """Run CSP forecast with the given config and optional column overrides."""
     cfg_copy = CSPConfig(
         h=cfg.h,
@@ -38,9 +38,12 @@ def run_csp_with_config(
         id_col=id_col,
     )
 
-    forecast_df, status, _ = run_csp_forecast(df, cfg=cfg_copy)
+    try:
+        forecast_df, status, _ = run_csp_forecast(df, cfg=cfg_copy)
+    except Exception:
+        return None
 
-    model_col = [c for c in forecast_df.columns if c not in ["unique_id", "ds"] and not c.endswith(("-lo-", "-hi-"))]
+    model_col = [c for c in forecast_df.columns if c not in ["unique_id", "ds"] and "-lo-" not in c and "-hi-" not in c]
     model_name = model_col[0] if model_col else "CSP"
 
     return ForecastResult(
@@ -70,11 +73,11 @@ def get_model_name(forecast_df: pd.DataFrame) -> str:
 
 def _run_single_model(
     df: pd.DataFrame,
-    cfg: CSPConfig,
+    cfg: "CSPConfig",
     model_class,
     model_name: str,
     timeout: int = 120,
-) -> Optional[ForecastResult]:
+) -> Optional["ForecastResult"]:
     """Run a single model with timeout."""
     from statsforecast import StatsForecast
     from csp_universal_forecast import _infer_season_length
@@ -120,21 +123,21 @@ def _run_single_model(
 
 def run_model_with_config(
     df: pd.DataFrame,
-    cfg: CSPConfig,
+    cfg: "CSPConfig",
     model_class,
     model_name: str,
     timeout: int = 120,
     **model_kwargs,
-) -> Optional[ForecastResult]:
+) -> Optional["ForecastResult"]:
     """Run a StatsForecast model with the given config and timeout."""
     return _run_single_model(df, cfg, model_class, model_name, timeout=timeout)
 
 
 def run_seasonal_naive_with_config(
     df: pd.DataFrame,
-    cfg: CSPConfig,
-    timeout: int = 120,
-) -> Optional[ForecastResult]:
+    cfg: "CSPConfig",
+    timeout: int = 60,
+) -> Optional["ForecastResult"]:
     """Run SeasonalNaive forecast with the given config."""
     from statsforecast.models import SeasonalNaive
     return _run_single_model(df, cfg, SeasonalNaive, "SeasonalNaive", timeout=timeout)
@@ -142,9 +145,9 @@ def run_seasonal_naive_with_config(
 
 def run_auto_arima_with_config(
     df: pd.DataFrame,
-    cfg: CSPConfig,
-    timeout: int = 120,
-) -> Optional[ForecastResult]:
+    cfg: "CSPConfig",
+    timeout: int = 300,
+) -> Optional["ForecastResult"]:
     """Run AutoARIMA forecast with the given config."""
     from statsforecast.models import AutoARIMA
     return _run_single_model(df, cfg, AutoARIMA, "AutoARIMA", timeout=timeout)
@@ -152,9 +155,9 @@ def run_auto_arima_with_config(
 
 def run_auto_ets_with_config(
     df: pd.DataFrame,
-    cfg: CSPConfig,
-    timeout: int = 120,
-) -> Optional[ForecastResult]:
+    cfg: "CSPConfig",
+    timeout: int = 60,
+) -> Optional["ForecastResult"]:
     """Run AutoETS forecast with the given config."""
     from statsforecast.models import AutoETS
     return _run_single_model(df, cfg, AutoETS, "AutoETS", timeout=timeout)
@@ -162,9 +165,9 @@ def run_auto_ets_with_config(
 
 def run_auto_theta_with_config(
     df: pd.DataFrame,
-    cfg: CSPConfig,
-    timeout: int = 120,
-) -> Optional[ForecastResult]:
+    cfg: "CSPConfig",
+    timeout: int = 60,
+) -> Optional["ForecastResult"]:
     """Run AutoTheta forecast with the given config."""
     from statsforecast.models import AutoTheta
     return _run_single_model(df, cfg, AutoTheta, "AutoTheta", timeout=timeout)
@@ -172,11 +175,12 @@ def run_auto_theta_with_config(
 
 def run_all_models(
     df: pd.DataFrame,
-    cfg: CSPConfig,
+    cfg: "CSPConfig",
     timeout: int = 120,
-) -> Dict[str, Optional[ForecastResult]]:
-    """Run all models: CSP, SeasonalNaive, AutoARIMA, AutoETS, AutoTheta."""
-    from statsforecast.models import SeasonalNaive, AutoARIMA, AutoETS, AutoTheta
+    include_slow: bool = False,
+) -> Dict[str, Optional["ForecastResult"]]:
+    """Run all models: CSP, SeasonalNaive, AutoETS, AutoTheta (AutoARIMA is optional/slow)."""
+    from statsforecast.models import SeasonalNaive, AutoETS, AutoTheta
 
     results = {}
 
@@ -184,29 +188,31 @@ def run_all_models(
     try:
         csp_result = run_csp_with_config(df, cfg)
         results["CSP"] = csp_result
-    except Exception as e:
+    except Exception:
         results["CSP"] = None
 
-    # Run other models in parallel
-    models = [
+    # Fast models: SeasonalNaive, AutoETS, AutoTheta (run sequentially to avoid GIL contention)
+    fast_models = [
         ("SeasonalNaive", SeasonalNaive, "SeasonalNaive"),
-        ("AutoARIMA", AutoARIMA, "AutoARIMA"),
         ("AutoETS", AutoETS, "AutoETS"),
         ("AutoTheta", AutoTheta, "AutoTheta"),
     ]
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        futures = {
-            executor.submit(_run_single_model, df, cfg, model_class, name, timeout): name
-            for name, model_class, name in models
-        }
+    for name, model_class, name in fast_models:
+        try:
+            results[name] = _run_single_model(df, cfg, model_class, name, timeout=60)
+        except Exception:
+            results[name] = None
 
-        for future in concurrent.futures.as_completed(futures):
-            name = futures[future]
-            try:
-                results[name] = future.result(timeout=5)
-            except Exception as e:
-                results[name] = None
+    # Slow model: AutoARIMA (optional)
+    if include_slow:
+        from statsforecast.models import AutoARIMA
+        try:
+            results["AutoARIMA"] = _run_single_model(df, cfg, AutoARIMA, "AutoARIMA", timeout=300)
+        except Exception:
+            results["AutoARIMA"] = None
+    else:
+        results["AutoARIMA"] = None
 
     return results
 
@@ -273,9 +279,9 @@ def compute_interval_metrics(
 
     h = len(fcst)
     y_true = hist["y"].values[-h:] if len(hist) >= h else hist["y"].values
-    lo = fcst[f"{model_name}-lo-{level}"].values
-    hi = fcst[f"{model_name}-hi-{level}"].values
-    pred = fcst[get_model_name(forecast_df)].values
+    lo = fcst[lo_col].values
+    hi = fcst[hi_col].values
+    pred = fcst[model_name].values
 
     if len(y_true) != len(lo):
         return None
@@ -290,9 +296,9 @@ def compute_interval_metrics(
 
     # CRPS approximation (uniform distribution within interval)
     crps = np.mean(
-        (hi - lo) / 4 
-        + (lo - y_true)**2 / (hi - lo) * (y_true < lo)
-        + (y_true - hi)**2 / (hi - lo) * (y_true > hi)
+        (hi - lo) / 4
+        + (lo - y_true) ** 2 / (hi - lo) * (y_true < lo)
+        + (y_true - hi) ** 2 / (hi - lo) * (y_true > hi)
     )
 
     return {
@@ -300,176 +306,3 @@ def compute_interval_metrics(
         f"PinballLoss_{level}%": float(pinball),
         f"CRPS_{level}%": float(crps),
     }
-
-
-def run_all_models(
-    df: pd.DataFrame,
-    cfg: CSPConfig,
-    timeout: int = 120,
-) -> Dict[str, Optional[ForecastResult]]:
-    """Run all models: CSP, SeasonalNaive, AutoARIMA, AutoETS, AutoTheta."""
-    from statsforecast.models import SeasonalNaive, AutoARIMA, AutoETS, AutoTheta
-
-    results = {}
-
-    # CSP
-    try:
-        csp_result = run_csp_with_config(df, cfg)
-        results["CSP"] = csp_result
-    except Exception as e:
-        results["CSP"] = None
-
-    # Run other models in parallel
-    models = [
-        ("SeasonalNaive", SeasonalNaive, "SeasonalNaive"),
-        ("AutoARIMA", AutoARIMA, "AutoARIMA"),
-        ("AutoETS", AutoETS, "AutoETS"),
-        ("AutoTheta", AutoTheta, "AutoTheta"),
-    ]
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        futures = {
-            executor.submit(_run_single_model, df, cfg, model_class, name, timeout): name
-            for name, model_class, name in models
-        }
-
-        for future in concurrent.futures.as_completed(futures):
-            name = futures[future]
-            try:
-                results[name] = future.result(timeout=5)
-            except Exception as e:
-                results[name] = None
-
-    return results
-
-
-def get_model_name(forecast_df: pd.DataFrame) -> str:
-    """Extract model name from forecast columns."""
-    for c in forecast_df.columns:
-        if c not in ["unique_id", "ds"] and "-lo-" not in c and "-hi-" not in c:
-            return c
-    return "CSP"
-
-
-def compute_backtest_metrics(
-    historical_df: pd.DataFrame,
-    forecast_df: pd.DataFrame,
-    series_id: str,
-) -> Optional[Dict[str, float]]:
-    """Compute backtest metrics for a single series using naive last-window method."""
-    hist = historical_df[historical_df["unique_id"] == series_id].sort_values("ds")
-    fcst = forecast_df[forecast_df["unique_id"] == series_id].sort_values("ds")
-
-    if hist.empty or fcst.empty:
-        return None
-
-    model_name = get_model_name(forecast_df)
-    pred_col = model_name
-
-    if pred_col not in fcst.columns:
-        return None
-
-    h = len(fcst)
-    y_true = hist["y"].values[-h:] if len(hist) >= h else hist["y"].values
-    y_pred = fcst[pred_col].values
-
-    if len(y_true) != len(y_pred):
-        return None
-
-    mae = float(np.mean(np.abs(y_true - y_pred)))
-    rmse = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
-    mape = float(np.mean(np.abs((y_true - y_pred) / np.where(y_true != 0, y_true, 1))) * 100)
-
-    return {"MAE": mae, "RMSE": rmse, "MAPE": mape}
-
-
-def compute_interval_metrics(
-    historical_df: pd.DataFrame,
-    forecast_df: pd.DataFrame,
-    series_id: str,
-    level: int = 95,
-) -> Optional[Dict[str, float]]:
-    """Compute interval calibration metrics (coverage, pinball loss, CRPS)."""
-    hist = historical_df[historical_df["unique_id"] == series_id].sort_values("ds")
-    fcst = forecast_df[forecast_df["unique_id"] == series_id].sort_values("ds")
-
-    if hist.empty or fcst.empty:
-        return None
-
-    model_name = get_model_name(forecast_df)
-    lo_col = f"{model_name}-lo-{level}"
-    hi_col = f"{model_name}-hi-{level}"
-
-    if lo_col not in fcst.columns or hi_col not in fcst.columns:
-        return None
-
-    h = len(fcst)
-    y_true = hist["y"].values[-h:] if len(hist) >= h else hist["y"].values
-    lo = fcst[f"{model_name}-lo-{level}"].values
-    hi = fcst[f"{model_name}-hi-{level}"].values
-    pred = fcst[get_model_name(forecast_df)].values
-
-    if len(y_true) != len(lo):
-        return None
-
-    # Coverage
-    covered = np.sum((y_true >= lo) & (y_true <= hi))
-    coverage = covered / len(y_true)
-
-    # Pinball loss (quantile loss)
-    alpha = level / 100.0
-    pinball = np.mean(np.where(y_true < lo, (1 - alpha) * (lo - y_true), alpha * (y_true - hi)))
-
-    # CRPS approximation (uniform distribution within interval)
-    crps = np.mean(
-        (hi - lo) / 4 
-        + (lo - y_true)**2 / (hi - lo) * (y_true < lo)
-        + (y_true - hi)**2 / (hi - lo) * (y_true > hi)
-    )
-
-    return {
-        f"Coverage_{level}%": coverage,
-        f"PinballLoss_{level}%": float(pinball),
-        f"CRPS_{level}%": float(crps),
-    }
-
-
-def run_all_models(
-    df: pd.DataFrame,
-    cfg: CSPConfig,
-    timeout: int = 120,
-) -> Dict[str, Optional[ForecastResult]]:
-    """Run all models: CSP, SeasonalNaive, AutoARIMA, AutoETS, AutoTheta."""
-    from statsforecast.models import SeasonalNaive, AutoARIMA, AutoETS, AutoTheta
-
-    results = {}
-
-    # CSP
-    try:
-        csp_result = run_csp_with_config(df, cfg)
-        results["CSP"] = csp_result
-    except Exception as e:
-        results["CSP"] = None
-
-    # Run other models in parallel
-    models = [
-        ("SeasonalNaive", SeasonalNaive, "SeasonalNaive"),
-        ("AutoARIMA", AutoARIMA, "AutoARIMA"),
-        ("AutoETS", AutoETS, "AutoETS"),
-        ("AutoTheta", AutoTheta, "AutoTheta"),
-    ]
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        futures = {
-            executor.submit(_run_single_model, df, cfg, model_class, name, timeout): name
-            for name, model_class, name in models
-        }
-
-        for future in concurrent.futures.as_completed(futures):
-            name = futures[future]
-            try:
-                results[name] = future.result(timeout=5)
-            except Exception as e:
-                results[name] = None
-
-    return results
