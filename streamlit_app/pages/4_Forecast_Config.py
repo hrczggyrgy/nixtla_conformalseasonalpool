@@ -5,8 +5,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import streamlit as st
+import pandas as pd
 from csp_universal_forecast import CSPConfig
 from streamlit_app.config import SESSION_KEYS, DEFAULT_CSP_CONFIG, VALIDATION_RULES
+from streamlit_app.components.app_shell import archive_current_results
 
 # Ensure session state is initialized
 for key in SESSION_KEYS:
