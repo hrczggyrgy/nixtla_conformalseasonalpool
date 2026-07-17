@@ -9,9 +9,9 @@ import pandas as pd
 
 from streamlit_app.utils.data_loader import auto_detect_columns, infer_frequency, prepare_long_dataframe, validate_column_selection
 from csp_universal_forecast import CSPConfig
+from streamlit_app.config import SESSION_KEYS, DEFAULT_CSP_CONFIG, VALIDATION_RULES
 
 # Ensure session state is initialized
-from streamlit_app.config import SESSION_KEYS, DEFAULT_CSP_CONFIG
 for key in SESSION_KEYS:
     if key not in st.session_state:
         st.session_state[key] = None
@@ -19,7 +19,7 @@ if "forecast_cfg" not in st.session_state or st.session_state.forecast_cfg is No
     st.session_state.forecast_cfg = CSPConfig(**DEFAULT_CSP_CONFIG)
 
 st.title("Column Configuration")
-st.caption("Map your data columns to the required format: date, value, and optional series ID.")
+st.caption("Review auto-detected column mappings and adjust if needed.")
 
 if st.session_state.raw_df is None:
     st.warning("Please upload data first on the Data Upload page.")
@@ -27,22 +27,127 @@ if st.session_state.raw_df is None:
 
 df = st.session_state.raw_df
 
-# Auto-detect columns
-with st.expander("Auto-Detection Results", expanded=True):
-    detected = auto_detect_columns(df)
-    
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.metric("Date Column", detected["date_col"] or "Not detected")
-    with c2:
-        st.metric("Value Column", detected["value_col"] or "Not detected")
-    with c3:
-        st.metric("ID Column", detected["id_col"] or "Auto (single series)")
+# Auto-detect columns with confidence
+detected = auto_detect_columns(df)
 
+def get_detection_confidence(df, col_name, col_type):
+    """Calculate confidence score for auto-detection."""
+    if not col_name:
+        return "low", "Not detected"
+    
+    if col_type == "date":
+        try:
+            parsed = pd.to_datetime(df[col_name], errors="coerce")
+            success_rate = parsed.notna().mean()
+            if success_rate >= 0.95:
+                return "high", f"Parsed as datetime for {success_rate:.0%} of rows"
+            elif success_rate >= 0.7:
+                return "medium", f"Parsed as datetime for {success_rate:.0%} of rows"
+            else:
+                return "low", f"Only {success_rate:.0%} rows parsed as datetime"
+        except Exception:
+            return "low", "Failed to parse"
+    
+    elif col_type == "value":
+        if pd.api.types.is_numeric_dtype(df[col_name]):
+            missing = df[col_name].isna().mean()
+            if missing < 0.05:
+                return "high", "Numeric column with <5% missing"
+            elif missing < 0.2:
+                return "medium", f"Numeric with {missing:.0%} missing"
+            else:
+                return "low", f"Numeric but {missing:.0%} missing"
+        return "low", "Not numeric"
+    
+    elif col_type == "id":
+        nunique = df[col_name].nunique()
+        total = len(df)
+        if 1 < nunique < total * 0.8:
+            return "high", f"Creates {nunique} series, {total//nunique} obs/series avg"
+        elif nunique == total:
+            return "low", "Unique per row (likely not an ID)"
+        else:
+            return "medium", f"Creates {nunique} series"
+    
+    return "low", "Unknown"
+
+# Auto-detection results with confidence
+st.subheader("Auto-Detection Results")
+
+c1, c2, c3 = st.columns(3)
+
+for col, (key, label, icon) in [
+    (c1, ("date_col", "Date Column", "📅")),
+    (c2, ("value_col", "Value Column", "🎯")),
+    (c3, ("id_col", "Series ID", "🔑")),
+]:
+    col_name = detected[key[0]]
+    confidence, reason = get_detection_confidence(df, col_name, key[0])
+    
+    confidence_colors = {"high": "#10b981", "medium": "#f59e0b", "low": "#ef4444"}
+    confidence_labels = {"high": "🟢 High", "medium": "🟡 Medium", "low": "🔴 Low"}
+    
+    with col:
+        st.metric(label[1], col_name or "Not detected")
+        
+        color = confidence_colors[confidence]
+        st.markdown(
+            f'<div style="padding: 8px; background: {color}20; border-left: 3px solid {color}; '
+            f'border-radius: 4px; margin: 8px 0;">'
+            f'<strong>{confidence_labels[confidence]} confidence</strong><br>'
+            f'<small>{reason}</small></div>',
+            unsafe_allow_html=True
+        )
+        
+        if confidence == "low":
+            st.warning("⚠️ Low confidence — please verify")
+
+# Natural language summary
 st.divider()
+st.subheader("Dataset Summary")
+
+# Generate natural language summary
+def generate_summary(detected, df):
+    parts = []
+    
+    # Series type
+    if detected["id_col"]:
+        n_series = df[detected["id_col"]].nunique()
+        parts.append(f"a **multi-series panel** with **{n_series} series**")
+    else:
+        parts.append("a **single time series**")
+    
+    # Frequency hint
+    freq = infer_frequency(df, detected["date_col"]) if detected["date_col"] else None
+    if freq:
+        freq_labels = {"D": "daily", "W": "weekly", "M": "monthly", "MS": "monthly", 
+                       "Q": "quarterly", "QS": "quarterly", "A": "annual", "Y": "annual"}
+        freq_label = freq_labels.get(freq.split("-")[0], freq)
+        parts.append(f"**{freq_label}** frequency")
+    
+    # Length
+    n_rows = len(df)
+    parts.append(f"**{n_rows:,} rows**")
+    
+    # Seasonality hint
+    if detected["value_col"] and detected["date_col"]:
+        try:
+            from csp_universal_forecast import _infer_season_length, _infer_freq
+            from csp_universal_forecast import _prepare_long_df
+            freq_inferred = _infer_freq(pd.to_datetime(df[detected["date_col"]], errors="coerce").dropna())
+            season = _infer_season_length(freq_inferred, df[detected["value_col"]].values)
+            if season > 1:
+                parts.append(f"likely seasonality of **{season}** periods")
+        except Exception:
+            pass
+    
+    return "We detected " + ", ".join(parts) + "."
+
+st.markdown(generate_summary(detected, df))
 
 # Manual column selection
-st.subheader("Column Mapping")
+st.divider()
+st.subheader("Column Mapping (Override if needed)")
 
 c1, c2, c3 = st.columns(3)
 
@@ -52,6 +157,7 @@ with c1:
         df.columns.tolist(),
         index=df.columns.tolist().index(detected["date_col"]) if detected["date_col"] in df.columns else 0,
         key="col_date",
+        help="Column containing timestamps"
     )
 
 with c2:
@@ -61,6 +167,7 @@ with c2:
         numeric_cols,
         index=numeric_cols.index(detected["value_col"]) if detected["value_col"] in numeric_cols else 0,
         key="col_value",
+        help="Numeric target variable to forecast"
     )
 
 with c3:
@@ -70,6 +177,7 @@ with c3:
         id_options,
         index=id_options.index(detected["id_col"]) if detected["id_col"] in id_options else 0,
         key="col_id",
+        help="Identifier for multi-series data; leave as '(auto)' for single series"
     )
     id_col = None if id_col == "(auto: single series)" else id_col
 
@@ -77,15 +185,16 @@ with c3:
 issues = validate_column_selection(df, date_col, value_col, id_col)
 
 if issues:
+    st.error("Validation failed:")
     for issue in issues:
-        st.error(issue)
+        st.markdown(f"- {issue}")
     st.stop()
 else:
-    st.success("Column mapping is valid")
+    st.success("✅ Column mapping is valid")
 
 # Frequency inference
 freq = infer_frequency(df, date_col)
-st.info(f"Inferred Frequency: **{freq}**")
+st.info(f"📈 Inferred Frequency: **{freq}**")
 
 # Preview processed data
 st.divider()
@@ -130,5 +239,11 @@ if st.session_state.processed_df is not None:
             end=('ds', 'max'),
         ).reset_index()
         st.dataframe(summary, use_container_width=True)
+        
+        # Warning for short series
+        min_obs = VALIDATION_RULES.get("min_obs_per_series", 10)
+        short = summary[summary['n_obs'] < min_obs]
+        if len(short) > 0:
+            st.warning(f"⚠️ {len(short)} series have fewer than {min_obs} observations and may be dropped")
     
-    st.success("Ready for forecasting! Go to Forecast Configuration to set parameters.")
+    st.success("Ready for forecasting! Go to **Forecast Configuration** to set parameters.")

@@ -11,14 +11,14 @@ import numpy as np
 from streamlit_app.utils.forecasting import run_csp_with_config, get_model_name
 from streamlit_app.utils.plotting import create_forecast_plot
 from streamlit_app.utils.export import create_forecast_download
+from streamlit_app.config import SESSION_KEYS, DEFAULT_CSP_CONFIG, EXPORT_PRESETS
+from csp_universal_forecast import CSPConfig
 
 # Ensure session state is initialized
-from streamlit_app.config import SESSION_KEYS, DEFAULT_CSP_CONFIG
 for key in SESSION_KEYS:
     if key not in st.session_state:
         st.session_state[key] = None
 if "forecast_cfg" not in st.session_state or st.session_state.forecast_cfg is None:
-    from csp_universal_forecast import CSPConfig
     st.session_state.forecast_cfg = CSPConfig(**DEFAULT_CSP_CONFIG)
 
 st.title("Forecast Results")
@@ -44,7 +44,7 @@ with col1:
     run_clicked = st.button("Run CSP Forecast", type="primary", use_container_width=True)
 with col2:
     if st.session_state.csp_results is not None:
-        st.success("CSP Results Available")
+        st.success("✅ CSP Results Available")
 with col3:
     if st.button("Clear Results", use_container_width=True):
         st.session_state.csp_results = None
@@ -67,6 +67,7 @@ if run_clicked:
                     "random_seed": cfg.random_seed,
                 },
             }
+            st.session_state.last_run_timestamp = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
             st.success(f"CSP Forecast completed: {result.model_name}")
             st.rerun()
         except Exception as e:
@@ -85,17 +86,49 @@ if st.session_state.csp_results is not None:
     series_fcst = fcst_df[fcst_df['unique_id'] == selected_series].sort_values('ds')
     series_hist = pdf[pdf['unique_id'] == selected_series].sort_values('ds')
     
-    # Status
+    # Status with badge
     series_status = status.get(selected_series, "unknown")
-    if series_status == "ok":
-        st.success(f"Status: {series_status}")
-    elif series_status.startswith("fallback"):
-        st.warning(f"Status: {series_status}")
-    else:
-        st.error(f"Status: {series_status}")
+    st.divider()
+    
+    # Natural language summary
+    n_series = fcst_df['unique_id'].nunique()
+    ok_count = sum(1 for v in status.values() if v == "ok")
+    fb_count = sum(1 for v in status.values() if v.startswith("fallback"))
+    dropped_count = sum(1 for v in status.values() if v.startswith("dropped"))
+    
+    st.markdown(
+        f"**Run Summary:** {ok_count} series OK"
+        f"{f', {fb_count} fallback to SeasonalNaive' if fb_count else ''}"
+        f"{f', {dropped_count} dropped' if dropped_count else ''}"
+        f" · Horizon: {config['h']} · Levels: {config['levels']} · {model_name}"
+    )
+    
+    # Per-series status badge
+    st.subheader(f"{model_name} Forecast — {selected_series}")
+    
+    status_badges = {
+        "ok": ("✅ OK", "#10b981"),
+        "fallback": ("⚠️ Fallback: SeasonalNaive", "#f59e0b"),
+        "dropped:too_short": ("🚫 Dropped: Too short", "#ef4444"),
+    }
+    
+    badge_text, badge_color = status_badges.get(
+        series_status if series_status in status_badges else "fallback" if series_status.startswith("fallback") else "dropped",
+        ("❓ Unknown", "#9ca3af")
+    )
+    
+    st.markdown(
+        f'<div style="display: inline-flex; align-items: center; padding: 8px 16px; '
+        f'background: {badge_color}20; border-left: 4px solid {badge_color}; '
+        f'border-radius: 6px; margin: 8px 0;">'
+        f'<span style="font-weight: 600; color: {badge_color};">{badge_text}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
     
     # Plot
-    st.subheader(f"{model_name} Forecast - {selected_series}")
+    st.divider()
+    st.subheader(f"Forecast Chart — {selected_series}")
     
     fig = create_forecast_plot(
         forecast_df=series_fcst,
@@ -128,7 +161,35 @@ if st.session_state.csp_results is not None:
         status_df = pd.DataFrame([
             {"Series ID": k, "Status": v} for k, v in status.items()
         ])
-        st.dataframe(status_df, use_container_width=True, hide_index=True)
+        
+        # Add color coding
+        def style_status(s):
+            if s == "ok":
+                return "background-color: #d1fae5; color: #065f46"
+            elif s.startswith("fallback"):
+                return "background-color: #fef3c7; color: #92400e"
+            elif s.startswith("dropped"):
+                return "background-color: #fee2e2; color: #991b1b"
+            return ""
+        
+        st.dataframe(
+            status_df.style.applymap(style_status, subset=['Status']),
+            use_container_width=True,
+            hide_index=True,
+        )
+    
+    # Previous run toggle
+    if st.session_state.last_results:
+        st.divider()
+        show_prev = st.toggle("Show Previous Run (for comparison)", value=False)
+        if show_prev:
+            prev = st.session_state.last_results
+            prev_fcst = prev.get("csp_results", {}).get("forecast_df")
+            if prev_fcst is not None:
+                prev_series = prev_fcst[prev_fcst['unique_id'] == selected_series]
+                if not prev_series.empty:
+                    st.markdown("**Previous Run**")
+                    st.dataframe(prev_series.head(10), use_container_width=True)
     
     # Download
     st.divider()

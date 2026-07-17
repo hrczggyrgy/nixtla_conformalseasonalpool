@@ -6,9 +6,9 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st
 from csp_universal_forecast import CSPConfig
+from streamlit_app.config import SESSION_KEYS, DEFAULT_CSP_CONFIG, VALIDATION_RULES
 
 # Ensure session state is initialized
-from streamlit_app.config import SESSION_KEYS, DEFAULT_CSP_CONFIG
 for key in SESSION_KEYS:
     if key not in st.session_state:
         st.session_state[key] = None
@@ -113,8 +113,13 @@ with c3:
 
 st.divider()
 
-# Save config
-if st.button("Save Configuration", type="primary", use_container_width=True):
+# Save config with archive
+if st.button("Save Configuration & Run Forecast", type="primary", use_container_width=True):
+    from streamlit_app.components.app_shell import archive_current_results
+    
+    # Archive previous results if any
+    archive_current_results()
+    
     new_cfg = CSPConfig(
         h=h,
         levels=levels,
@@ -129,13 +134,14 @@ if st.button("Save Configuration", type="primary", use_container_width=True):
         id_col=None,
     )
     st.session_state.forecast_cfg = new_cfg
-    st.success("Configuration saved!")
+    st.session_state.last_run_timestamp = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+    st.success("Configuration saved! Proceed to Forecast Results to run.")
+    st.rerun()
 
 # Display current config
 st.divider()
 st.subheader("Current Configuration")
 
-import json
 config_dict = {
     "h": h,
     "levels": levels,
@@ -164,10 +170,20 @@ c3.metric("Avg Obs/Series", f"{avg_obs:.0f}")
 c4.metric("Series < Min Obs", f"{short_series} Warning" if short_series > 0 else "0 OK")
 
 if short_series > 0:
-    st.warning(f"{short_series} series will be dropped (less than {min_obs} observations)")
+    st.warning(f"⚠️ {short_series} series will be dropped (less than {min_obs} observations)")
 
 if n_series > batch_size:
-    st.info(f"{n_series} series will be processed in {n_series // batch_size + 1} batches")
+    st.info(f"📦 {n_series} series will be processed in {n_series // batch_size + 1} batches")
+
+# Estimated runtime
+est_series_per_sec = 50  # rough estimate
+est_time = n_series / est_series_per_sec
+if est_time < 10:
+    st.caption(f"⏱️ Estimated runtime: ~{est_time:.0f} seconds")
+elif est_time < 60:
+    st.caption(f"⏱️ Estimated runtime: ~{est_time:.0f} seconds")
+else:
+    st.caption(f"⏱️ Estimated runtime: ~{est_time/60:.1f} minutes")
 
 st.divider()
 
