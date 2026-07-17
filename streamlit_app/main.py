@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 from streamlit_app.config import SESSION_KEYS, DEFAULT_CSP_CONFIG
-from streamlit_app.components.app_shell import render_top_bar, render_sidebar_stepper, reset_workflow
+from streamlit_app.components.app_shell import render_top_bar, reset_workflow
 
 def init_session_state():
     for key in SESSION_KEYS:
@@ -54,16 +54,6 @@ pages = {
 }
 
 pg = st.navigation(pages)
-
-# Get current page for stepper
-current_page = "Data Upload"
-# Note: pg.current_page is not available in current Streamlit version
-# Using session state as fallback
-if "st_pages_current_page" in st.session_state:
-    current_page = st.session_state["st_pages_current_page"]
-
-# Render sidebar with stepper
-render_sidebar_stepper(current_page)
 
 # Run the page
 pg.run()

@@ -78,26 +78,58 @@ c4.metric("ACF strength", f"{acf_strength:.3f}")
 st.divider()
 st.subheader("🚀 Run Comparison")
 
+# Timeout configuration
+timeout = st.slider(
+    "Model timeout (seconds per model)",
+    min_value=30,
+    max_value=300,
+    value=st.session_state.get("model_timeout", 120),
+    step=30,
+    help="Maximum time to wait for each model. AutoARIMA can take 60-120s per series.",
+    key="model_timeout",
+)
+
+# Model selection
+st.markdown("**Model Selection**")
+col1, col2 = st.columns(2)
+with col1:
+    run_fast = st.checkbox("Run fast models (CSP, SeasonalNaive, AutoETS, AutoTheta)", value=True, 
+                          help="These models complete in seconds per series")
+with col2:
+    run_slow = st.checkbox("Run slow models (AutoARIMA)", value=False,
+                          help="AutoARIMA can take 60-120s per series. For 10 series, this may take 10-20 minutes.")
+
 MODEL_GROUPS = {
     "Tier 1 — Point Forecast Competitors": [
         ("CSP", "CSP", "ConformalSeasonalPool"),
-        ("AutoARIMA", "AutoARIMA", "Automatic ARIMA"),
         ("AutoETS", "AutoETS", "Exponential Smoothing"),
         ("AutoTheta", "AutoTheta", "Theta method"),
+    ],
+    "Tier 1 — Slow (Optional)": [
+        ("AutoARIMA", "AutoARIMA", "Automatic ARIMA (slow)"),
     ],
     "Tier 2 — Interval Calibration Reference": [
         ("SeasonalNaive", "SeasonalNaive", "Seasonal Naive (CSP's point anchor)"),
     ],
 }
 
-ALL_MODELS = [m[0] for group in MODEL_GROUPS.values() for m in group]
+if run_slow:
+    ALL_MODELS = [m[0] for group in MODEL_GROUPS.values() for m in group]
+else:
+    # Only fast models
+    fast_models = []
+    for group in MODEL_GROUPS.values():
+        for m in group:
+            if m[0] != "AutoARIMA":
+                fast_models.append(m[0])
+    ALL_MODELS = fast_models
 
 run_col1, run_col2 = st.columns([3, 1])
 
 with run_col1:
     if st.button("Run All Models", type="primary", use_container_width=True):
-        with st.spinner("Running all models..."):
-            results = run_all_models(pdf, cfg)
+        with st.spinner(f"Running all models (timeout: {timeout}s each)..."):
+            results = run_all_models(pdf, cfg, timeout=timeout)
             
             # Store results
             for model_key, result in results.items():
