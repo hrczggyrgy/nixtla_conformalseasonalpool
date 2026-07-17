@@ -34,22 +34,22 @@ render_top_bar()
 # Navigation pages
 pages = {
     "Home": [
-        st.Page("streamlit_app/pages/0_Home.py", title="Home"),
+        st.Page("pages/0_Home.py", title="Home"),
     ],
     "Data Upload": [
-        st.Page("streamlit_app/pages/1_Data_Upload.py", title="Data Upload"),
+        st.Page("pages/1_Data_Upload.py", title="Data Upload"),
     ],
     "Exploratory Analysis": [
-        st.Page("streamlit_app/pages/2_EDA.py", title="EDA"),
+        st.Page("pages/2_EDA.py", title="EDA"),
     ],
     "Configuration": [
-        st.Page("streamlit_app/pages/3_Column_Config.py", title="Column Config"),
-        st.Page("streamlit_app/pages/4_Forecast_Config.py", title="Forecast Config"),
+        st.Page("pages/3_Column_Config.py", title="Column Config"),
+        st.Page("pages/4_Forecast_Config.py", title="Forecast Config"),
     ],
     "Results": [
-        st.Page("streamlit_app/pages/5_Forecast_Results.py", title="Forecast Results"),
-        st.Page("streamlit_app/pages/6_Model_Comparison.py", title="Model Comparison"),
-        st.Page("streamlit_app/pages/7_Download_Results.py", title="Download Results"),
+        st.Page("pages/5_Forecast_Results.py", title="Forecast Results"),
+        st.Page("pages/6_Model_Comparison.py", title="Model Comparison"),
+        st.Page("pages/7_Download_Results.py", title="Download Results"),
     ],
 }
 

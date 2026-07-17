@@ -183,6 +183,20 @@ def reset_workflow():
         del st.session_state[key]
 
 
+def archive_current_results():
+    """Move current results to archive for comparison."""
+    if st.session_state.get("csp_results") or st.session_state.get("sn_results"):
+        st.session_state.last_results = {
+            "csp_results": st.session_state.get("csp_results"),
+            "sn_results": st.session_state.get("sn_results"),
+            "comparison_metrics": st.session_state.get("comparison_metrics"),
+            "comparison_interval_metrics": st.session_state.get("comparison_interval_metrics"),
+            "col_config": st.session_state.get("col_config"),
+            "forecast_cfg": st.session_state.get("forecast_cfg"),
+            "timestamp": st.session_state.get("last_run_timestamp"),
+        }
+
+
 def get_step_page_map():
     """Return mapping of step IDs to page paths."""
     return {s["id"]: f"pages/{s['page']}" for s in STEPS}
