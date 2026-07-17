@@ -1,4 +1,6 @@
-# CSP Universal Forecast
+# CSP Forecast
+
+live app: https://nixtla-conformalseasonalpool.streamlit.app/
 
 Autonomous, robust, and universal time-series forecasting script built on
 Nixtla's **ConformalSeasonalPool (CSP)** — a training-free forecasting model
