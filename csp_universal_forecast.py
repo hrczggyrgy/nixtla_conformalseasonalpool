@@ -133,7 +133,7 @@ _FREQ_SEASON_MAP = {
 def _infer_freq(dates: pd.Series) -> str:
     dates = pd.Series(pd.to_datetime(dates, errors="coerce")).dropna()
     dates = dates.sort_values().drop_duplicates()
-    if dates.tz is not None:
+    if isinstance(dates.dtype, pd.DatetimeTZDtype):
         dates = dates.dt.tz_localize(None)
 
     inferred = pd.infer_freq(dates)
@@ -202,7 +202,7 @@ def _prepare_long_df(df: pd.DataFrame, date_col: str, value_col: str,
                       id_col: Optional[str], freq: str, cfg: CSPConfig) -> pd.DataFrame:
     work = df.copy()
     work[date_col] = pd.to_datetime(work[date_col], errors="coerce", utc=False)
-    if pd.api.types.is_datetime64tz_dtype(work[date_col]):
+    if isinstance(work[date_col].dtype, pd.DatetimeTZDtype):
         work[date_col] = work[date_col].dt.tz_localize(None)
 
     n_bad_dates = work[date_col].isna().sum()

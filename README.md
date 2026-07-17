@@ -14,17 +14,17 @@ prediction intervals.
 
 ## Features
 
-- 🔎 **Auto-detects** date column, target column, and series-id column (no config needed)
-- 📅 **Infers sampling frequency** (hourly, daily, weekly, monthly, quarterly, yearly)
-- 🔁 **Data-driven seasonality detection** via autocorrelation (ACF), not just frequency lookup
-- 🧹 **Cleans data**: parses dates, drops bad rows, deduplicates, fills gaps, interpolates
-- 🎯 **Outlier-resistant** preprocessing (IQR clipping) before fitting
-- 🧩 **Handles single or multi-series (panel) data** automatically
-- 🛟 **Automatic fallback** to `SeasonalNaive` if CSP fails on a given series/batch
-- 📊 **Per-series status report** (`ok`, `fallback`, `dropped:<reason>`)
-- 📦 **Batched fitting** for very large panels (memory-safe)
-- ✅ **Built-in self-tests** to catch regressions
-- 🧪 Fully typed, validated config via a single `CSPConfig` dataclass
+- Auto-detects date column, target column, and series-id column (no config needed)
+- Infers sampling frequency (hourly, daily, weekly, monthly, quarterly, yearly)
+- Data-driven seasonality detection via autocorrelation (ACF), not just frequency lookup
+- Cleans data: parses dates, drops bad rows, deduplicates, fills gaps, interpolates
+- Outlier-resistant preprocessing (IQR clipping) before fitting
+- Handles single or multi-series (panel) data automatically
+- Automatic fallback to `SeasonalNaive` if CSP fails on a given series/batch
+- Per-series status report (`ok`, `fallback`, `dropped:<reason>`)
+- Batched fitting for very large panels (memory-safe)
+- Built-in self-tests to catch regressions
+- Fully typed, validated config via a single `CSPConfig` dataclass
 
 ---
 
@@ -48,7 +48,7 @@ pip install -r requirements.txt
 
 | File | Description |
 |---|---|
-| `csp_universal_forecast_v2.py` | Main script — hardened, production-ready version |
+| `csp_universal_forecast.py` | Main script — hardened, production-ready version |
 | `requirements.txt` | Python dependencies |
 
 ---
@@ -57,7 +57,7 @@ pip install -r requirements.txt
 
 ```python
 import pandas as pd
-from csp_universal_forecast_v2 import run_csp_forecast, CSPConfig
+from csp_universal_forecast import run_csp_forecast, CSPConfig
 
 df = pd.read_csv("your_data.csv")  # any column names, any order
 
