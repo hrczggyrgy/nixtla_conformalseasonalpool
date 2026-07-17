@@ -199,8 +199,6 @@ def validate_step(step_id: str) -> tuple[bool, list[str], list[str]]:
         else:
             df = st.session_state.raw_df
             if len(df) < VALIDATION_RULES["min_rows"]:
-                warnings
-            min_rows"]:
                 warnings.append(f"Only {len(df)} rows (minimum {VALIDATION_RULES['min_rows']})")
             if df.isnull().sum().sum() / df.size > VALIDATION_RULES["max_missing_pct"] / 100:
                 warnings.append("High percentage of missing values")
