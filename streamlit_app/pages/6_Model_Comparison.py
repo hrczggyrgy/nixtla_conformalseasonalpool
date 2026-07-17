@@ -8,7 +8,16 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-from streamlit_app.utils.forecasting import run_csp_with_config, run_seasonal_naive_with_config, compute_backtest_metrics
+from streamlit_app.utils.forecasting import (
+    run_csp_with_config,
+    run_seasonal_naive_with_config,
+    run_auto_arima_with_config,
+    run_auto_ets_with_config,
+    run_auto_theta_with_config,
+    run_all_models,
+    compute_backtest_metrics,
+    compute_interval_metrics,
+)
 from streamlit_app.utils.plotting import create_comparison_plot, create_metric_comparison_bar
 from streamlit_app.utils.export import create_comparison_download
 from streamlit_app.config import SESSION_KEYS, DEFAULT_CSP_CONFIG
@@ -22,11 +31,7 @@ if "forecast_cfg" not in st.session_state or st.session_state.forecast_cfg is No
     st.session_state.forecast_cfg = CSPConfig(**DEFAULT_CSP_CONFIG)
 
 st.title("Model Comparison")
-st.caption("Compare CSP vs SeasonalNaive — understand which to trust.")
-
-st.info("ℹ️ **Note:** CSP (ConformalSeasonalPool) uses SeasonalNaive as its base point forecaster. "
-        "Point forecasts are identical; **CSP provides wider, conformal prediction intervals** "
-        "with finite-sample coverage guarantees.")
+st.caption("Compare CSP against multiple baselines — point forecasts & interval calibration.")
 
 if st.session_state.processed_df is None:
     st.warning("Please prepare data on the Column Config page first.")
@@ -44,9 +49,9 @@ else:
 
 st.info(f"Series: **{selected_series}** | Observations: {len(pdf[pdf['unique_id'] == selected_series])}")
 
-# Series-specific explanation
+# Series-specific profile
 st.divider()
-st.subheader("📊 Series Profile & Recommendation")
+st.subheader("📊 Series Profile")
 
 series_data = pdf[pdf['unique_id'] == selected_series]['y'].dropna()
 n_obs = len(series_data)
@@ -59,248 +64,252 @@ if n_obs > 20:
     try:
         from statsmodels.tsa.stattools import acf
         acf_vals = acf(series_data, nlags=min(20, n_obs // 4), fft=True)
-        # Seasonality strength = max ACF at lags > 1
         acf_strength = max(acf_vals[2:]) if len(acf_vals) > 2 else 0
     except Exception:
         acf_strength = 0
 
-# Generate recommendation
-def get_recommendation(acf_strength, cv, nunique, n_obs):
-    if n_obs < 20:
-        return ("SeasonalNaive", "Series too short for CSP's conformal intervals to be reliable. "
-                "SeasonalNaive's simpler intervals are more appropriate.")
-    elif nunique <= 1:
-        return ("SeasonalNaive", "Series is constant — CSP intervals will be zero-width. "
-                "SeasonalNaive handles this more gracefully.")
-    elif cv < 0.05:
-        return ("SeasonalNaive", "Very regular series (low CV). CSP's wider intervals add little value. "
-                "SeasonalNaive's simplicity is sufficient.")
-    elif acf_strength > 0.4:
-        return ("CSP", f"Strong seasonality detected (ACF strength: {acf_strength:.2f}). "
-                "CSP's conformal intervals properly account for seasonal uncertainty.")
-    elif acf_strength > 0.2:
-        return ("CSP", f"Moderate seasonality (ACF: {acf_strength:.2f}). "
-                "CSP provides calibrated intervals with proper coverage.")
-    else:
-        return ("CSP (slight edge)", "Weak/no seasonality. CSP's conformal intervals are still "
-                "theoretically sound; use SeasonalNaive if simplicity is preferred.")
-
-rec_model, rec_reason = get_recommendation(acf_strength, cv, nunique, n_obs)
-
-# Display series profile
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Observations", f"{n_obs}")
 c2.metric("CV (σ/μ)", f"{cv:.3f}")
 c3.metric("Unique values", f"{nunique}")
 c4.metric("ACF strength", f"{acf_strength:.3f}")
 
-# Recommendation card
-rec_colors = {"CSP": "#10b981", "SeasonalNaive": "#f59e0b"}
-if "CSP" in rec_model:
-    rec_color = rec_colors["CSP"]
-elif "SeasonalNaive" in rec_model:
-    rec_color = rec_colors["SeasonalNaive"]
-
-st.markdown(
-    f'<div style="padding: 16px; background: {rec_color}15; border-left: 4px solid {rec_color}; '
-    f'border-radius: 8px; margin: 16px 0;">'
-    f'<strong style="color: {rec_color}; font-size: 1.1em;">Recommendation: {rec_model}</strong><br>'
-    f'<span style="margin-top: 8px; display: block;">{rec_reason}</span>'
-    f'</div>',
-    unsafe_allow_html=True
-)
-
 # Run comparison
 st.divider()
-run_col1, run_col2 = st.columns([2, 1])
+st.subheader("🚀 Run Comparison")
+
+MODEL_GROUPS = {
+    "Tier 1 — Point Forecast Competitors": [
+        ("CSP", "CSP", "ConformalSeasonalPool"),
+        ("AutoARIMA", "AutoARIMA", "Automatic ARIMA"),
+        ("AutoETS", "AutoETS", "Exponential Smoothing"),
+        ("AutoTheta", "AutoTheta", "Theta method"),
+    ],
+    "Tier 2 — Interval Calibration Reference": [
+        ("SeasonalNaive", "SeasonalNaive", "Seasonal Naive (CSP's point anchor)"),
+    ],
+}
+
+ALL_MODELS = [m[0] for group in MODEL_GROUPS.values() for m in group]
+
+run_col1, run_col2 = st.columns([3, 1])
 
 with run_col1:
-    if st.button("Run Model Comparison (CSP + SeasonalNaive)", type="primary", use_container_width=True):
-        with st.spinner("Running CSP..."):
-            try:
-                csp_res = run_csp_with_config(pdf, cfg)
-                st.session_state.csp_results = {
-                    "forecast_df": csp_res.forecast_df,
-                    "status": csp_res.status,
-                    "model_name": csp_res.model_name,
-                    "config": {
-                        "h": cfg.h,
-                        "levels": cfg.levels,
-                        "min_obs_per_series": cfg.min_obs_per_series,
-                        "outlier_clip": cfg.outlier_clip,
-                        "outlier_iqr_mult": cfg.outlier_iqr_mult,
-                        "random_seed": cfg.random_seed,
-                    },
-                }
-                st.success("CSP completed")
-            except Exception as e:
-                st.error(f"CSP failed: {e}")
-                st.session_state.csp_results = None
-        
-        with st.spinner("Running SeasonalNaive..."):
-            try:
-                sn_res = run_seasonal_naive_with_config(pdf, cfg)
-                st.session_state.sn_results = {
-                    "forecast_df": sn_res.forecast_df,
-                    "status": sn_res.status,
-                    "model_name": sn_res.model_name,
-                    "config": {
-                        "h": cfg.h,
-                        "levels": cfg.levels,
-                        "min_obs_per_series": cfg.min_obs_per_series,
-                        "outlier_clip": cfg.outlier_clip,
-                        "outlier_iqr_mult": cfg.outlier_iqr_mult,
-                        "random_seed": cfg.random_seed,
-                    },
-                }
-                st.success("SeasonalNaive completed")
-            except Exception as e:
-                st.error(f"SeasonalNaive failed: {e}")
-                st.session_state.sn_results = None
-        
-        if st.session_state.csp_results and st.session_state.sn_results:
-            # Compute metrics
+    if st.button("Run All Models", type="primary", use_container_width=True):
+        with st.spinner("Running all models..."):
+            results = run_all_models(pdf, cfg)
+            
+            # Store results
+            for model_key, result in results.items():
+                if result is not None:
+                    st.session_state[f"{model_key.lower()}_results"] = {
+                        "forecast_df": result.forecast_df,
+                        "status": result.status,
+                        "model_name": result.model_name,
+                        "config": {
+                            "h": cfg.h,
+                            "levels": cfg.levels,
+                            "min_obs_per_series": cfg.min_obs_per_series,
+                            "outlier_clip": cfg.outlier_clip,
+                            "outlier_iqr_mult": cfg.outlier_iqr_mult,
+                            "random_seed": cfg.random_seed,
+                        },
+                    }
+                else:
+                    st.session_state[f"{model_key.lower()}_results"] = None
+            
+            # Compute metrics for all models
             metrics = {}
-            for model_name, res in [("CSP", st.session_state.csp_results), ("SeasonalNaive", st.session_state.sn_results)]:
-                m = compute_backtest_metrics(
-                    pdf, res["forecast_df"], selected_series
-                )
-                if m:
-                    metrics[model_name] = m
+            interval_metrics = {}
+            for model_key in ALL_MODELS:
+                res = st.session_state.get(f"{model_key.lower()}_results")
+                if res:
+                    if res is not None:
+                        m = compute_backtest_metrics(pdf, res["forecast_df"], selected_series)
+                        if m:
+                            metrics[model_key] = m
+                        
+                        # Interval metrics for models that provide intervals
+                        im = compute_interval_metrics(pdf, res["forecast_df"], selected_series, level=95)
+                        if im:
+                            interval_metrics[model_key] = im
             
             if metrics:
                 st.session_state.comparison_metrics = metrics
+            if interval_metrics:
+                st.session_state.comparison_interval_metrics = interval_metrics
             
+            st.success("All models completed!")
             st.rerun()
 
 with run_col2:
-    if st.session_state.csp_results and st.session_state.sn_results:
-        if st.button("Re-run", use_container_width=True):
-            st.session_state.csp_results = None
-            st.session_state.sn_results = None
+    if any(st.session_state.get(f"{m.lower()}_results") for m in ALL_MODELS):
+        if st.button("Re-run All", use_container_width=True):
+            for m in ALL_MODELS:
+                st.session_state[f"{m.lower()}_results"] = None
             st.session_state.comparison_metrics = None
+            st.session_state.comparison_interval_metrics = None
             st.rerun()
 
-# Display results
-if st.session_state.csp_results and st.session_state.sn_results:
-    csp_res = st.session_state.csp_results
-    sn_res = st.session_state.sn_results
-    
+# Check if we have results
+available_models = [m for m in ALL_MODELS if st.session_state.get(f"{m.lower()}_results") is not None]
+
+if available_models:
     st.divider()
     
     # Status comparison
     st.subheader("Model Status")
     
-    c1, c2 = st.columns(2)
-    with c1:
-        csp_status = csp_res["status"].get(selected_series, "unknown")
-        if csp_status == "ok":
-            st.success(f"CSP: {csp_status}")
-        elif csp_status.startswith("fallback"):
-            st.warning(f"CSP: {csp_status}")
-        else:
-            st.error(f"CSP: {csp_status}")
-        st.caption(f"Model: {csp_res['model_name']}")
+    cols = st.columns(len(available_models))
+    for i, model_key in enumerate(available_models):
+        res = st.session_state[f"{model_key.lower()}_results"]
+        with cols[i]:
+            status = res["status"].get(selected_series, "unknown")
+            if status == "ok":
+                st.success(f"{model_key}: {status}")
+            elif status.startswith("fallback"):
+                st.warning(f"{model_key}: {status}")
+            else:
+                st.error(f"{model_key}: {status}")
+            st.caption(f"Model: {res['model_name']}")
     
-    with c2:
-        sn_status = sn_res["status"].get(selected_series, "unknown")
-        if sn_status == "ok":
-            st.success(f"SeasonalNaive: {sn_status}")
-        else:
-            st.error(f"SeasonalNaive: {sn_status}")
-        st.caption(f"Model: {sn_res['model_name']}")
-    
-    # Comparison plot
+    # Tier 1: Point Forecast Comparison
     st.divider()
-    st.subheader("Forecast Comparison")
+    st.subheader("🎯 Tier 1 — Point Forecast Accuracy (MAE / RMSE / MAPE)")
     
-    fig = create_comparison_plot(
-        history_df=pdf,
-        csp_forecast=csp_res["forecast_df"],
-        sn_forecast=sn_res["forecast_df"],
-        series_id=selected_series,
-        model_name="y",
-        history_len=100,
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    tier1_models = [m[0] for m in MODEL_GROUPS["Tier 1 — Point Forecast Competitors"]]
+    available_tier1 = [m for m in tier1_models if m in available_models]
     
-    # Metrics comparison
-    if st.session_state.comparison_metrics:
-        st.divider()
-        st.subheader("Accuracy Metrics (Backtest)")
-        
+    if st.session_state.get("comparison_metrics"):
         metrics = st.session_state.comparison_metrics
         
-        # Table
-        metrics_df = pd.DataFrame(metrics).T.round(4)
-        st.dataframe(metrics_df, use_container_width=True)
+        # Filter to available tier1 models
+        tier1_metrics = {k: v for k, v in metrics.items() if k in available_tier1}
         
-        # Chart
-        chart_rows = []
-        for model_name, model_metrics in metrics.items():
-            row = {"Series": selected_series, "Model": model_name}
-            row.update(model_metrics)
-            chart_rows.append(row)
-        chart_df = pd.DataFrame(chart_rows)
-        fig_metrics = create_metric_comparison_bar(chart_df, "MAE")
-        st.plotly_chart(fig_metrics, use_container_width=True)
+        if tier1_metrics:
+            metrics_df = pd.DataFrame(tier1_metrics).T.round(4)
+            st.dataframe(metrics_df, use_container_width=True)
+            
+            # Chart
+            chart_rows = []
+            for model_name, model_metrics in tier1_metrics.items():
+                row = {"Series": selected_series, "Model": model_name}
+                row.update(model_metrics)
+                chart_rows.append(row)
+            chart_df = pd.DataFrame(chart_rows)
+            from streamlit_app.utils.plotting import create_metric_comparison_bar
+            fig_metrics = create_metric_comparison_bar(chart_df, "MAE")
+            st.plotly_chart(fig_metrics, use_container_width=True)
+            
+            # Best model explanation
+            if "CSP" in tier1_metrics:
+                csp_mae = tier1_metrics["CSP"].get("MAE", float('inf'))
+                others = {k: v.get("MAE", float('inf')) for k, v in tier1_metrics.items() if k != "CSP"}
+                
+                if others:
+                    best_other = min(others, key=others.get)
+                    best_other_mae = others[best_other]
+                    
+                    st.divider()
+                    st.subheader("Why this model wins on point accuracy")
+                    
+                    if csp_mae < best_other_mae:
+                        st.success(f"✅ **CSP wins** (MAE: {csp_mae:.4f} vs {best_other}: {best_other_mae:.4f})")
+                        st.markdown("""
+                        **Why CSP wins on point accuracy:**
+                        - CSP's conformal intervals adapt to local volatility
+                        - Better handling of seasonal transitions
+                        - Calibrated coverage means fewer surprises in production
+                        """)
+                    elif best_other_mae < csp_mae:
+                        st.warning(f"⚠️ **{best_other} wins** (MAE: {best_other_mae:.4f} vs CSP: {csp_mae:.4f})")
+                        st.markdown(f"""
+                        **Why {best_other} wins on point accuracy:**
+                        - Extremely regular, repetitive pattern
+                        - CSP's conformal intervals don't improve point accuracy
+                        - Simpler model is sufficient and more interpretable
+                        """)
+                    else:
+                        st.info("Tie — both models equivalent on this series")
+    
+    # Tier 2: Interval Calibration Comparison
+    st.divider()
+    st.subheader("📏 Tier 2 — Interval Calibration (Coverage / Pinball / CRPS)")
+    
+    if st.session_state.get("comparison_interval_metrics"):
+        int_metrics = st.session_state.comparison_interval_metrics
         
-        # Best model explanation
-        if "CSP" in metrics and "SeasonalNaive" in metrics:
-            csp_mae = metrics["CSP"].get("MAE", float('inf'))
-            sn_mae = metrics["SeasonalNaive"].get("MAE", float('inf'))
+        int_df = pd.DataFrame(int_metrics).T.round(4)
+        st.dataframe(int_df, use_container_width=True)
+        
+        st.caption("""
+        **Coverage**: Fraction of actuals within the prediction interval (target = confidence level)
+        **Pinball Loss**: Quantile loss — lower is better
+        **CRPS**: Continuous Ranked Probability Score — lower is better
+        """)
+        
+        # Explanation
+        if "CSP" in int_metrics and "SeasonalNaive" in int_metrics:
+            csp_cov = int_metrics["CSP"].get("Coverage_95%", 0)
+            sn_cov = int_metrics["SeasonalNaive"].get("Coverage_95%", 0)
             
             st.divider()
-            st.subheader("Why this model wins")
+            st.subheader("Why interval calibration matters")
             
-            if csp_mae < sn_mae:
-                st.success(f"✅ **CSP wins** (MAE: {csp_mae:.4f} vs {sn_mae:.4f})")
+            if abs(csp_cov - 0.95) < abs(sn_cov - 0.95):
+                st.success(f"✅ **CSP intervals better calibrated** (95% coverage: CSP={csp_cov:.1%}, SN={sn_cov:.1%})")
                 st.markdown("""
-                **Why CSP wins here:**
-                - CSP's conformal intervals adapt to local volatility
-                - Better handling of seasonal transitions
-                - Calibrated coverage means fewer surprises in production
-                """)
-            elif sn_mae < csp_mae:
-                st.warning(f"⚠️ **SeasonalNaive wins** (MAE: {sn_mae:.4f} vs {csp_mae:.4f})")
-                st.markdown("""
-                **Why SeasonalNaive wins here:**
-                - Extremely regular, repetitive pattern
-                - CSP's wider intervals don't improve point accuracy
-                - Simpler model is sufficient and more interpretable
+                **Why CSP wins on calibration:**
+                - Conformal prediction provides finite-sample coverage guarantees
+                - Intervals adapt to local volatility and seasonality
+                - SeasonalNaive intervals assume constant variance
                 """)
             else:
-                st.info("Tie — both models equivalent on this series")
+                st.warning(f"⚠️ **SeasonalNaive intervals closer to nominal** (95% coverage: CSP={csp_cov:.1%}, SN={sn_cov:.1%})")
+                st.markdown("""
+                **Why SeasonalNaive calibration is competitive here:**
+                - Very regular, stationary series
+                - Constant variance assumption holds
+                - Simpler method sufficient for calibration
+                """)
+    
+    # Comparison plot (CSP vs SeasonalNaive)
+    if "CSP" in available_models and "SeasonalNaive" in available_models:
+        st.divider()
+        st.subheader("📈 Forecast Overlay (CSP vs SeasonalNaive)")
+        
+        csp_res = st.session_state["csp_results"]
+        sn_res = st.session_state["seasonalnaive_results"]
+        
+        from streamlit_app.utils.plotting import create_comparison_plot
+        fig = create_comparison_plot(
+            history_df=pdf,
+            csp_forecast=csp_res["forecast_df"],
+            sn_forecast=sn_res["forecast_df"],
+            series_id=selected_series,
+            model_name="y",
+            history_len=100,
+        )
+        st.plotly_chart(fig, use_container_width=True)
     
     # Forecast tables
     st.divider()
     st.subheader("Forecast Values")
     
-    tab1, tab2 = st.tabs(["CSP", "SeasonalNaive"])
-    
-    with tab1:
-        csp_fcst = csp_res["forecast_df"][csp_res["forecast_df"]['unique_id'] == selected_series]
-        pred_col = csp_res["model_name"]
-        display_cols = ['ds', pred_col]
-        for level in sorted(cfg.levels):
-            lo = f"{pred_col}-lo-{level}"
-            hi = f"{pred_col}-hi-{level}"
-            if lo in csp_fcst.columns and hi in csp_fcst.columns:
-                display_cols.extend([lo, hi])
-        
-        st.dataframe(csp_fcst[display_cols].reset_index(drop=True), use_container_width=True, hide_index=True)
-    
-    with tab2:
-        sn_fcst = sn_res["forecast_df"][sn_res["forecast_df"]['unique_id'] == selected_series]
-        pred_col = sn_res["model_name"]
-        display_cols = ['ds', pred_col]
-        for level in sorted(cfg.levels):
-            lo = f"{pred_col}-lo-{level}"
-            hi = f"{pred_col}-hi-{level}"
-            if lo in sn_fcst.columns and hi in sn_fcst.columns:
-                display_cols.extend([lo, hi])
-        
-        st.dataframe(sn_fcst[display_cols].reset_index(drop=True), use_container_width=True, hide_index=True)
+    tabs = st.tabs([m for m in ALL_MODELS if m in available_models])
+    for i, model_key in enumerate([m for m in ALL_MODELS if m in available_models]):
+        with tabs[i]:
+            res = st.session_state[f"{model_key.lower()}_results"]
+            fcst = res["forecast_df"][res["forecast_df"]['unique_id'] == selected_series]
+            pred_col = res["model_name"]
+            display_cols = ['ds', pred_col]
+            for level in sorted(cfg.levels):
+                lo = f"{pred_col}-lo-{level}"
+                hi = f"{pred_col}-hi-{level}"
+                if lo in fcst.columns and hi in fcst.columns:
+                    display_cols.extend([lo, hi])
+            
+            st.dataframe(fcst[display_cols].reset_index(drop=True), use_container_width=True, hide_index=True)
     
     # Download
     st.divider()
@@ -317,11 +326,18 @@ if st.session_state.csp_results and st.session_state.sn_results:
         "verbose": cfg.verbose,
     }
     
+    # Build download with all available models
+    csp_res = st.session_state.get("csp_results", {})
+    sn_res = st.session_state.get("seasonalnaive_results", {})
+    arima_res = st.session_state.get("autoarima_results", {})
+    ets_res = st.session_state.get("autoets_results", {})
+    theta_res = st.session_state.get("autotheta_results", {})
+    
     download_files = create_comparison_download(
-        csp_forecast=csp_res["forecast_df"],
-        sn_forecast=sn_res["forecast_df"],
-        csp_status=csp_res["status"],
-        sn_status=sn_res["status"],
+        csp_forecast=csp_res.get("forecast_df", pd.DataFrame()) if csp_res else pd.DataFrame(),
+        sn_forecast=sn_res.get("forecast_df", pd.DataFrame()) if sn_res else pd.DataFrame(),
+        csp_status=csp_res.get("status", {}) if csp_res else {},
+        sn_status=sn_res.get("status", {}) if sn_res else {},
         config=config_dict,
     )
     
@@ -347,26 +363,18 @@ if st.session_state.csp_results and st.session_state.sn_results:
         )
 
 else:
-    st.info("Click **Run Model Comparison** to generate forecasts from both models.")
+    st.info("Click **Run All Models** to generate forecasts from CSP, AutoARIMA, AutoETS, AutoTheta, and SeasonalNaive.")
     
     st.divider()
     st.subheader("What Will Be Compared")
     
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown("**CSP (ConformalSeasonalPool)**")
-        st.markdown("""
-        - Training-free conformal prediction intervals
-        - Data-driven seasonality detection
-        - Robust to outliers (with IQR clipping)
-        - Falls back to SeasonalNaive if needed
-        """)
+        st.markdown("**Tier 1 — Point Forecast Competitors**")
+        for key, label, desc in MODEL_GROUPS["Tier 1 — Point Forecast Competitors"]:
+            st.markdown(f"- **{label}** ({desc})")
     
     with c2:
-        st.markdown("**SeasonalNaive (Baseline)**")
-        st.markdown("""
-        - Simple seasonal naive benchmark
-        - Repeats last seasonal cycle
-        - Fast, interpretable baseline
-        - Provides prediction intervals (from statsforecast)
-        """)
+        st.markdown("**Tier 2 — Interval Calibration Reference**")
+        for key, label, desc in MODEL_GROUPS["Tier 2 — Interval Calibration Reference"]:
+            st.markdown(f"- **{label}** ({desc})")
