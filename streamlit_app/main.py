@@ -57,8 +57,10 @@ pg = st.navigation(pages)
 
 # Get current page for stepper
 current_page = "Data Upload"
-if pg.current_page:
-    current_page = pg.current_page.title
+# Note: pg.current_page is not available in current Streamlit version
+# Using session state as fallback
+if "st_pages_current_page" in st.session_state:
+    current_page = st.session_state["st_pages_current_page"]
 
 # Render sidebar with stepper
 render_sidebar_stepper(current_page)
