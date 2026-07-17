@@ -87,6 +87,8 @@ if has_both:
         download_files = create_comparison_download(
             csp_forecast=csp_res["forecast_df"],
             sn_forecast=sn_res["forecast_df"],
+            csp_status=csp_res["status"],
+            sn_status=sn_res["status"],
             config=csp_res["config"],
         )
         

@@ -200,3 +200,13 @@ def create_model_card(
     return {
         f"{model_name}_model_card_{timestamp}.md": report_bytes,
     }
+
+
+def to_excel_bytes(sheets: Dict[str, pd.DataFrame]) -> bytes:
+    """Convert dict of sheet_name -> DataFrame to Excel bytes."""
+    excel_buffer = io.BytesIO()
+    with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+        for sheet_name, df in sheets.items():
+            df.to_excel(writer, sheet_name=sheet_name[:31], index=False)
+    excel_buffer.seek(0)
+    return excel_buffer.read()

@@ -211,8 +211,8 @@ if st.session_state.csp_results and st.session_state.sn_results:
     )
     
     # Get actual keys from download_files
-    csv_key = [k for k in download_files if k.endswith("_forecasts_") and k.endswith(".csv")][0]
-    excel_key = [k for k in download_files if k.endswith("_results_") and k.endswith(".xlsx")][0]
+    csv_key = [k for k in download_files if "_forecasts_" in k and k.endswith(".csv")][0]
+    excel_key = [k for k in download_files if "_results_" in k and k.endswith(".xlsx")][0]
     
     c1, c2 = st.columns(2)
     with c1:

@@ -142,9 +142,9 @@ if st.session_state.csp_results is not None:
     )
     
     # Get the actual keys (they contain timestamps)
-    forecast_key = [k for k in download_files if k.endswith("_forecast_") and k.endswith(".csv")][0]
-    status_key = [k for k in download_files if k.endswith("_status_") and k.endswith(".csv")][0]
-    excel_key = [k for k in download_files if k.endswith("_results_") and k.endswith(".xlsx")][0]
+    forecast_key = [k for k in download_files if "_forecast_" in k and k.endswith(".csv")][0]
+    status_key = [k for k in download_files if "_status_" in k and k.endswith(".csv")][0]
+    excel_key = [k for k in download_files if "_results_" in k and k.endswith(".xlsx")][0]
     
     c1, c2, c3 = st.columns(3)
     
