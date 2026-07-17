@@ -95,6 +95,103 @@ def create_forecast_plot(
     return fig
 
 
+def create_all_models_comparison_plot(
+    history_df: pd.DataFrame,
+    model_forecasts: Dict[str, pd.DataFrame],
+    series_id: str,
+    history_col: str = "y",
+    history_len: int = 100,
+) -> go.Figure:
+    """Create single plot comparing all models on one chart."""
+    hist = history_df[history_df["unique_id"] == series_id].sort_values("ds")
+    
+    # Model colors
+    model_colors = {
+        "CSP": "#ff7f0e",
+        "AutoARIMA": "#1f77b4",
+        "AutoETS": "#2ca02c",
+        "AutoTheta": "#d62728",
+        "SeasonalNaive": "#9467bd",
+    }
+    
+    fig = go.Figure()
+    
+    # History
+    if not hist.empty:
+        hist_tail = hist.tail(history_len)
+        fig.add_trace(go.Scatter(
+            x=hist_tail["ds"],
+            y=hist_tail[history_col],
+            mode="lines+markers",
+            name="History",
+            line=dict(color="#1f77b4", width=2),
+            marker=dict(size=4),
+            hovertemplate="Date: %{x}<br>Actual: %{y:.2f}<extra></extra>",
+        ))
+    
+    # Each model's forecast
+    for model_key, forecast_df in model_forecasts.items():
+        if forecast_df is None or forecast_df.empty:
+            continue
+            
+        fcst = forecast_df[forecast_df["unique_id"] == series_id].sort_values("ds")
+        if fcst.empty:
+            continue
+            
+        # Find model column
+        model_col = model_key
+        if model_key not in fcst.columns:
+            candidates = [c for c in fcst.columns if c not in ["unique_id", "ds"] and not c.endswith(("-lo-", "-hi-"))]
+            model_col = candidates[0] if candidates else model_key
+        
+        if model_col not in fcst.columns:
+            continue
+        
+        color = model_colors.get(model_key, "#888888")
+        
+        # Forecast line
+        fig.add_trace(go.Scatter(
+            x=fcst["ds"],
+            y=fcst[model_col],
+            mode="lines+markers",
+            name=model_key,
+            line=dict(color=color, width=2, dash="dash"),
+            marker=dict(size=5),
+            hovertemplate=f"Date: %{{x}}<br>{model_key}: %{{y:.2f}}<extra></extra>",
+        ))
+        
+        # Confidence intervals (only for models that have them)
+        lo_cols = [c for c in fcst.columns if c.startswith(f"{model_col}-lo-")]
+        hi_cols = [c for c in fcst.columns if c.startswith(f"{model_col}-hi-")]
+        levels = sorted(set(c.split("-")[-1] for c in lo_cols))
+        
+        for level in levels:
+            lo_col = f"{model_col}-lo-{level}"
+            hi_col = f"{model_col}-hi-{level}"
+            if lo_col in fcst.columns and hi_col in fcst.columns:
+                fig.add_trace(go.Scatter(
+                    x=fcst["ds"].tolist() + fcst["ds"].tolist()[::-1],
+                    y=fcst[lo_col].tolist() + fcst[hi_col].tolist()[::-1],
+                    fill="toself",
+                    fillcolor=f"rgba({int(color[1:3],16)}, {int(color[3:5],16)}, {int(color[5:7],16)}, 0.15)",
+                    line=dict(color="rgba(255,255,255,0)"),
+                    name=f"{model_key} {level}% CI",
+                    showlegend=False,
+                    hoverinfo="skip",
+                ))
+    
+    fig.update_layout(
+        title=f"All Models Comparison — Series: {series_id}",
+        xaxis_title="Date",
+        yaxis_title="Value",
+        hovermode="x unified",
+        template="plotly_white",
+        height=600,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    return fig
+
+
 def create_comparison_plot(
     history_df: pd.DataFrame,
     csp_forecast: pd.DataFrame,
@@ -190,32 +287,102 @@ def create_comparison_plot(
     return fig
 
 
-def create_multi_series_plot(
+"""Plotting utilities for Streamlit app."""
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from typing import List, Optional, Dict
+
+
+def create_all_models_comparison_plot(
     history_df: pd.DataFrame,
-    series_ids: List[str],
-    value_col: str = "y",
+    model_forecasts: Dict[str, pd.DataFrame],
+    series_id: str,
+    model_name: str = "y",
+    history_len: int = 100,
 ) -> go.Figure:
-    """Create overlay plot of multiple time series."""
+    """Create a single overlay plot showing all models' forecasts."""
+    hist = history_df[history_df["unique_id"] == series_id].sort_values("ds")
+    
+    # Model colors
+    model_colors = {
+        "CSP": "#ff7f0e",
+        "AutoARIMA": "#1f77b4",
+        "AutoETS": "#2ca02c",
+        "AutoTheta": "#d62728",
+        "SeasonalNaive": "#9467bd",
+    }
+    
     fig = go.Figure()
     
-    for sid in series_ids:
-        s = history_df[history_df["unique_id"] == sid].sort_values("ds")
-        if not s.empty:
-            fig.add_trace(go.Scatter(
-                x=s["ds"],
-                y=s[value_col],
-                mode="lines",
-                name=sid,
-                line=dict(width=1.5),
-            ))
+    # History
+    if not hist.empty:
+        hist_tail = hist.tail(history_len)
+        fig.add_trace(go.Scatter(
+            x=hist_tail["ds"],
+            y=hist_tail["y"],
+            mode="lines+markers",
+            name="History",
+            line=dict(color="#1f77b4", width=2),
+            marker=dict(size=4),
+            hovertemplate="Date: %{x}<br>Actual: %{y:.2f}<extra></extra>",
+        ))
+    
+    # Each model's forecast
+    for model_key, forecast_df in model_forecasts.items():
+        fcst = forecast_df[forecast_df["unique_id"] == series_id].sort_values("ds")
+        if fcst.empty:
+            continue
+            
+        color = model_colors.get(model_key, "#9467bd")
+        
+        # Find model column
+        model_col = model_key
+        if model_key not in fcst.columns:
+            candidates = [c for c in fcst.columns if c not in ["unique_id", "ds"] and not c.endswith(("-lo-", "-hi-"))]
+            model_col = candidates[0] if candidates else model_key
+        
+        # Forecast line
+        fig.add_trace(go.Scatter(
+            x=fcst["ds"],
+            y=fcst[model_col],
+            mode="lines+markers",
+            name=f"{model_key} Forecast",
+            line=dict(color=color, width=2, dash="dash"),
+            marker=dict(size=5),
+            hovertemplate="Date: %{x}<br>Forecast: %{y:.2f}<extra></extra>",
+        ))
+        
+        # Confidence intervals (only for first level to avoid clutter)
+        lo_cols = [c for c in fcst.columns if c.startswith(f"{model_col}-lo-")]
+        hi_cols = [c for c in fcst.columns if c.startswith(f"{model_col}-hi-")]
+        levels = sorted(set(c.split("-")[-1] for c in lo_cols))
+        
+        # Show only 95% CI
+        if "95" in levels:
+            level = "95"
+            lo_col = f"{model_col}-lo-{level}"
+            hi_col = f"{model_col}-hi-{level}"
+            if lo_col in fcst.columns and hi_col in fcst.columns:
+                fig.add_trace(go.Scatter(
+                    x=fcst["ds"].tolist() + fcst["ds"].tolist()[::-1],
+                    y=fcst[lo_col].tolist() + fcst[hi_col].tolist()[::-1],
+                    fill="toself",
+                    fillcolor=f"rgba({int(color[1:3],16)}, {int(color[3:5],16)}, {int(color[5:7],16)}, 0.15)",
+                    line=dict(color="rgba(255,255,255,0)"),
+                    name=f"{model_key} {level}% CI",
+                    hoverinfo="skip",
+                    showlegend=True,
+                ))
     
     fig.update_layout(
-        title="Multi-Series Time Series",
+        title=f"All Models Forecast Overlay — {series_id}",
         xaxis_title="Date",
         yaxis_title="Value",
-        template="plotly_white",
-        height=500,
         hovermode="x unified",
+        template="plotly_white",
+        height=700,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
     return fig
 

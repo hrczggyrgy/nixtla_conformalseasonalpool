@@ -273,21 +273,23 @@ if available_models:
                 - Simpler method sufficient for calibration
                 """)
     
-    # Comparison plot (CSP vs SeasonalNaive)
-    if "CSP" in available_models and "SeasonalNaive" in available_models:
+    # Comparison plot - ALL models on one chart
+    if available_models:
         st.divider()
-        st.subheader("📈 Forecast Overlay (CSP vs SeasonalNaive)")
+        st.subheader("📈 Forecast Overlay (C Forecast Overlay — All Models")
         
-        csp_res = st.session_state["csp_results"]
-        sn_res = st.session_state["seasonalnaive_results"]
+        # Collect all available model forecasts
+        model_forecasts = {}
+        for model_key in available_models:
+            res = st.session_state.get(f"{model_key.lower()}_results")
+            if res:
+                model_forecasts[model_key] = res["forecast_df"]
         
-        from streamlit_app.utils.plotting import create_comparison_plot
-        fig = create_comparison_plot(
+        from streamlit_app.utils.plotting import create_all_models_comparison_plot
+        fig = create_all_models_comparison_plot(
             history_df=pdf,
-            csp_forecast=csp_res["forecast_df"],
-            sn_forecast=sn_res["forecast_df"],
+            model_forecasts=model_forecasts,
             series_id=selected_series,
-            model_name="y",
             history_len=100,
         )
         st.plotly_chart(fig, use_container_width=True)

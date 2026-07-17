@@ -302,29 +302,32 @@ def run_csp_forecast(
     sf = None
     for batch_ids in batches:
         batch_df = long_df[long_df["unique_id"].isin(batch_ids)]
-        try:
-            model = ConformalSeasonalPool(season_length=season_length)
-            sf = StatsForecast(models=[model], freq=freq, n_jobs=-1)
-            fcst = sf.forecast(df=batch_df, h=cfg.h, level=cfg.levels)
-            all_forecasts.append(fcst)
-            for uid in batch_ids:
-                status[uid] = "ok"
-        except Exception as e:
-            logger.warning(
-                f"CSP failed on batch ({len(batch_ids)} series): {e}. "
-                f"Falling back to SeasonalNaive."
-            )
+        batch_forecasts = []
+        batch_status = {}
+        
+        for uid in batch_ids:
+            series_df = batch_df[batch_df["unique_id"] == uid]
             try:
-                fallback_model = SeasonalNaive(season_length=season_length)
-                sf = StatsForecast(models=[fallback_model], freq=freq, n_jobs=-1)
-                fcst = sf.forecast(df=batch_df, h=cfg.h, level=cfg.levels)
-                all_forecasts.append(fcst)
-                for uid in batch_ids:
-                    status[uid] = "fallback:SeasonalNaive"
-            except Exception as e2:
-                logger.error(f"Fallback also failed for batch: {e2}")
-                for uid in batch_ids:
-                    status[uid] = f"dropped:error({e2})"
+                model = ConformalSeasonalPool(season_length=season_length)
+                sf = StatsForecast(models=[model], freq=freq, n_jobs=-1)
+                fcst = sf.forecast(df=series_df, h=cfg.h, level=cfg.levels)
+                batch_forecasts.append(fcst)
+                batch_status[uid] = "ok"
+            except Exception as e:
+                logger.warning(f"CSP failed on series '{uid}': {e}. Falling back to SeasonalNaive.")
+                try:
+                    fallback_model = SeasonalNaive(season_length=season_length)
+                    sf = StatsForecast(models=[fallback_model], freq=freq, n_jobs=-1)
+                    fcst = sf.forecast(df=series_df, h=cfg.h, level=cfg.levels)
+                    batch_forecasts.append(fcst)
+                    batch_status[uid] = "fallback:SeasonalNaive"
+                except Exception as e2:
+                    logger.error(f"Fallback also failed for series '{uid}': {e2}")
+                    batch_status[uid] = f"dropped:error({e2})"
+        
+        if batch_forecasts:
+            all_forecasts.extend(batch_forecasts)
+        status.update(batch_status)
 
     if not all_forecasts:
         raise RuntimeError("All batches failed to produce forecasts (CSP and fallback).")
