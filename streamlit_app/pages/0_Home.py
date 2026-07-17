@@ -38,7 +38,7 @@ col1, col2 = st.columns(2, gap="large")
 
 with col1:
     if st.button("📁 Upload my data", use_container_width=True, type="primary"):
-        st.switch_page("streamlit_app/pages/1_Data_Upload.py")
+        st.switch_page("Data Upload")
 
 with col2:
     if st.button("🧪 Try sample dataset", use_container_width=True):
@@ -56,7 +56,7 @@ with col2:
             st.session_state.col_config = detected
             
             # Go to Column Config
-            st.switch_page("streamlit_app/pages/3_Column_Config.py")
+            st.switch_page("Column Config")
 
 st.divider()
 
