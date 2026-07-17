@@ -1,4 +1,4 @@
-# CSP Forecast
+# CSP Universal Forecast
 
 live app: https://nixtla-conformalseasonalpool.streamlit.app/
 
@@ -27,6 +27,7 @@ prediction intervals.
 - Batched fitting for very large panels (memory-safe)
 - Built-in self-tests to catch regressions
 - Fully typed, validated config via a single `CSPConfig` dataclass
+- **Streamlit web app** with multi-page workflow: Upload → EDA → Column Config → Forecast Config → Results → Model Comparison → Download
 
 ---
 
@@ -36,6 +37,11 @@ prediction intervals.
 statsforecast>=2.1.1
 pandas>=2.2.3
 numpy>=1.26.4
+openpyxl>=3.1.0
+streamlit>=1.38.0
+plotly>=5.24.0
+scipy>=1.11.0
+statsmodels>=0.14.0
 ```
 
 Install:
@@ -50,12 +56,13 @@ pip install -r requirements.txt
 
 | File | Description |
 |---|---|
-| `csp_universal_forecast.py` | Main script — hardened, production-ready version |
+| `csp_universal_forecast.py` | Core library — hardened, production-ready CSP forecasting |
+| `streamlit_app/` | Multi-page Streamlit web application |
 | `requirements.txt` | Python dependencies |
 
 ---
 
-## Quick Start
+## Quick Start (Python API)
 
 ```python
 import pandas as pd
@@ -80,7 +87,7 @@ All parameters can be passed either as keyword arguments or via a `CSPConfig`
 object for stricter typing and validation:
 
 ```python
-from csp_universal_forecast_v2 import CSPConfig, run_csp_forecast
+from csp_universal_forecast import CSPConfig, run_csp_forecast
 
 cfg = CSPConfig(
     date_col=None,            # auto-detected if None
@@ -139,12 +146,29 @@ plotting via `sf_model.plot(...)`.
 
 ---
 
+## Streamlit Web App
+
+```bash
+streamlit run streamlit_app/main.py
+```
+
+**Workflow:**
+1. **Data Upload** — CSV/Excel/Parquet upload or load sample dataset
+2. **EDA** — Data quality checklist, distribution, autocorrelation, seasonality, stationarity
+3. **Column Config** — Auto-detected columns with confidence scores, manual override
+4. **Forecast Config** — Horizon, confidence levels, robustness options
+5. **Forecast Results** — Interactive chart, forecast table, per-series status, download
+6. **Model Comparison** — CSP vs AutoARIMA, AutoETS, AutoTheta, SeasonalNaive (Tier 1: point accuracy, Tier 2: interval calibration)
+7. **Download** — Preset bundles (Minimal/Standard/Complete/Comparison) or custom build
+
+---
+
 ## Example: Multi-Series Panel
 
 ```python
 import pandas as pd
 import numpy as np
-from csp_universal_forecast_v2 import run_csp_forecast
+from csp_universal_forecast import run_csp_forecast
 
 rng = pd.date_range("2023-01-01", periods=400, freq="D")
 
@@ -173,7 +197,7 @@ The script includes built-in self-tests covering normal series, too-short
 series, constant series, and multi-series panels:
 
 ```bash
-python csp_universal_forecast_v2.py
+python csp_universal_forecast.py
 ```
 
 Expected output ends with:
@@ -193,6 +217,13 @@ INFO | All self-tests passed.
 5. **Fitting** — instantiates `ConformalSeasonalPool(season_length=...)` inside a `StatsForecast` pipeline, batched for large panels.
 6. **Fallback** — if CSP raises an exception for a batch, retries with `SeasonalNaive` before giving up.
 7. **Reporting** — returns forecasts plus a transparent per-series status dictionary.
+
+### Key Improvements in v2
+
+- **True observed counts** — filters short series using pre-interpolation observation counts, not padded row counts
+- **Per-series seasonality** — computes season length per series, uses majority vote for batch default
+- **Local random generator** — uses `np.random.default_rng(seed)` instead of global `np.random.seed()` for thread safety
+- **Per-series batch isolation** — retries failed series individually before falling back, preventing one bad series from dragging down an entire batch
 
 ---
 

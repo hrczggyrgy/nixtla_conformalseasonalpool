@@ -70,19 +70,8 @@ if run_clicked:
                 value_col=col_config.get("value_col"),
                 id_col=col_config.get("id_col")
             )
-            st.session_state.csp_results = {
-                "forecast_df": result.forecast_df,
-                "status": result.status,
-                "model_name": result.model_name,
-                "config": {
-                    "h": cfg.h,
-                    "levels": cfg.levels,
-                    "min_obs_per_series": cfg.min_obs_per_series,
-                    "outlier_clip": cfg.outlier_clip,
-                    "outlier_iqr_mult": cfg.outlier_iqr_mult,
-                    "random_seed": cfg.random_seed,
-                },
-            }
+            # Store ForecastResult object directly (not dict)
+            st.session_state.csp_results = result
             st.session_state.last_run_timestamp = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
             st.success(f"CSP Forecast completed: {result.model_name}")
             st.rerun()
@@ -92,15 +81,21 @@ if run_clicked:
 
 # Display results
 if st.session_state.csp_results is not None:
-    res = st.session_state.csp_results
-    fcst_df = res["forecast_df"]
-    status = res["status"]
-    model_name = res["model_name"]
-    config = res["config"]
+    # Now we access as ForecastResult object
+    result = st.session_state.csp_results
+    fcst_df = result.forecast_df
+    status = result.status
+    model_name = result.model_name
+    config = result.config
     
     # Filter for selected series
     series_fcst = fcst_df[fcst_df['unique_id'] == selected_series].sort_values('ds')
     series_hist = pdf[pdf['unique_id'] == selected_series].sort_values('ds')
+    
+    # Series-level guard
+    if series_fcst.empty:
+        st.warning(f"No forecast available for series '{selected_series}'. It may have been dropped — check status below.")
+        st.stop()
     
     # Status with badge
     series_status = status.get(selected_series, "unknown")
@@ -116,7 +111,7 @@ if st.session_state.csp_results is not None:
         f"**Run Summary:** {ok_count} series OK"
         f"{f', {fb_count} fallback to SeasonalNaive' if fb_count else ''}"
         f"{f', {dropped_count} dropped' if dropped_count else ''}"
-        f" · Horizon: {config['h']} · Levels: {config['levels']} · {model_name}"
+        f" · Horizon: {config.get('h', cfg.h)} · Levels: {config.get('levels', cfg.levels)} · {model_name}"
     )
     
     # Per-series status badge
@@ -160,7 +155,7 @@ if st.session_state.csp_results is not None:
     pred_col = get_model_name(fcst_df)
     display_cols = ['ds', pred_col]
     
-    for level in config["levels"]:
+    for level in config.get("levels", cfg.levels):
         lo = f"{pred_col}-lo-{level}"
         hi = f"{pred_col}-hi-{level}"
         if lo in series_fcst.columns and hi in series_fcst.columns:
@@ -207,29 +202,24 @@ if st.session_state.csp_results is not None:
                     st.markdown("**Previous Run**")
                     st.dataframe(prev_series.head(10), use_container_width=True)
     
-    # Download
+    # Download - using new fixed-key pattern
     st.divider()
     st.subheader("Download Results")
     
-    download_files = create_forecast_download(
+    download_files, download_names = create_forecast_download(
         forecast_df=fcst_df,
         status=status,
         config=config,
         model_name=model_name,
     )
     
-    # Get the actual keys (they contain timestamps)
-    forecast_key = [k for k in download_files if "_forecast_" in k and k.endswith(".csv")][0]
-    status_key = [k for k in download_files if "_status_" in k and k.endswith(".csv")][0]
-    excel_key = [k for k in download_files if "_results_" in k and k.endswith(".xlsx")][0]
-    
     c1, c2, c3 = st.columns(3)
     
     with c1:
         st.download_button(
             "Forecast CSV",
-            data=download_files[forecast_key],
-            file_name=f"{model_name}_forecast.csv",
+            data=download_files["forecast_csv"],
+            file_name=download_names["forecast_csv"],
             mime="text/csv",
             use_container_width=True,
         )
@@ -237,8 +227,8 @@ if st.session_state.csp_results is not None:
     with c2:
         st.download_button(
             "Status CSV",
-            data=download_files[status_key],
-            file_name=f"{model_name}_status.csv",
+            data=download_files["status_csv"],
+            file_name=download_names["status_csv"],
             mime="text/csv",
             use_container_width=True,
         )
@@ -246,8 +236,8 @@ if st.session_state.csp_results is not None:
     with c3:
         st.download_button(
             "Full Excel",
-            data=download_files[excel_key],
-            file_name=f"{model_name}_results.xlsx",
+            data=download_files["results_xlsx"],
+            file_name=download_names["results_xlsx"],
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )

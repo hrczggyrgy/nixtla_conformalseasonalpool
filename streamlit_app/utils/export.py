@@ -2,7 +2,11 @@
 import io
 import pandas as pd
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+
+
+def _timestamp() -> str:
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 def create_forecast_download(
@@ -10,52 +14,65 @@ def create_forecast_download(
     status: Dict[str, str],
     config: Dict,
     model_name: str,
-) -> Dict[str, bytes]:
-    """Create downloadable files for forecast results."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
+) -> Tuple[Dict[str, bytes], Dict[str, str]]:
+    """Create downloadable files for forecast results.
+
+    Returns:
+        Tuple of (files_dict, filenames_dict) where:
+        - files_dict: fixed keys -> file bytes
+        - filenames_dict: fixed keys -> display filenames
+    """
+    timestamp = _timestamp()
+
     # Forecast CSV
     forecast_csv = forecast_df.to_csv(index=False).encode("utf-8")
-    
+
     # Status CSV
     status_df = pd.DataFrame([
         {"Series ID": k, "Status": v} for k, v in status.items()
     ])
     status_csv = status_df.to_csv(index=False).encode("utf-8")
-    
+
     # Config CSV
     config_df = pd.DataFrame([config])
     config_csv = config_df.to_csv(index=False).encode("utf-8")
-    
+
     # Excel with multiple sheets
     excel_buffer = io.BytesIO()
     with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
         forecast_df.to_excel(writer, sheet_name="Forecasts", index=False)
         status_df.to_excel(writer, sheet_name="Status", index=False)
         config_df.to_excel(writer, sheet_name="Config", index=False)
-        
+
         # Add metadata sheet
         meta_df = pd.DataFrame({
-            "Property": ["Model", "Generated", "Horizon", "Confidence Levels", 
+            "Property": ["Model", "Generated", "Horizon", "Confidence Levels",
                         "Min Obs/Series", "Outlier Clipping", "IQR Multiplier", "Random Seed"],
-            "Value": [model_name, timestamp, config.get("h", ""), 
+            "Value": [model_name, timestamp, config.get("h", ""),
                      ", ".join(map(str, config.get("levels", []))),
-                     config.get("min_obs_per_series", ""), 
+                     config.get("min_obs_per_series", ""),
                      config.get("outlier_clip", ""),
                      config.get("outlier_iqr_mult", ""),
                      config.get("random_seed", "")],
         })
         meta_df.to_excel(writer, sheet_name="Metadata", index=False)
-    
+
     excel_buffer.seek(0)
     excel_bytes = excel_buffer.read()
-    
-    return {
-        f"{model_name}_forecast_{timestamp}.csv": forecast_csv,
-        f"{model_name}_status_{timestamp}.csv": status_csv,
-        f"{model_name}_config_{timestamp}.csv": config_csv,
-        f"{model_name}_results_{timestamp}.xlsx": excel_bytes,
+
+    files = {
+        "forecast_csv": forecast_csv,
+        "status_csv": status_csv,
+        "config_csv": config_csv,
+        "results_xlsx": excel_bytes,
     }
+    filenames = {
+        "forecast_csv": f"{model_name}_forecast_{timestamp}.csv",
+        "status_csv": f"{model_name}_status_{timestamp}.csv",
+        "config_csv": f"{model_name}_config_{timestamp}.csv",
+        "results_xlsx": f"{model_name}_results_{timestamp}.xlsx",
+    }
+    return files, filenames
 
 
 def create_comparison_download(
@@ -64,13 +81,13 @@ def create_comparison_download(
     csp_status: Dict[str, str],
     sn_status: Dict[str, str],
     config: Dict,
-) -> Dict[str, bytes]:
+) -> Tuple[Dict[str, bytes], Dict[str, str]]:
     """Create downloadable files for model comparison."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
+    timestamp = _timestamp()
+
     # Merge forecasts
     all_forecasts = pd.concat([csp_forecast, sn_forecast], ignore_index=True)
-    
+
     # Status comparison
     all_series = set(csp_status.keys()) | set(sn_status.keys())
     status_rows = []
@@ -81,33 +98,39 @@ def create_comparison_download(
             "SeasonalNaive Status": sn_status.get(s, "N/A"),
         })
     status_df = pd.DataFrame(status_rows)
-    
+
     # Config
     config_df = pd.DataFrame([config])
-    
+
     # Excel
     excel_buffer = io.BytesIO()
     with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
         all_forecasts.to_excel(writer, sheet_name="All Forecasts", index=False)
         status_df.to_excel(writer, sheet_name="Status Comparison", index=False)
         config_df.to_excel(writer, sheet_name="Config", index=False)
-        
+
         meta_df = pd.DataFrame({
             "Property": ["Generated", "Horizon", "Confidence Levels", "Min Obs/Series"],
-            "Value": [timestamp, config.get("h", ""), 
+            "Value": [timestamp, config.get("h", ""),
                      ", ".join(map(str, config.get("levels", []))),
                      config.get("min_obs_per_series", "")],
         })
         meta_df.to_excel(writer, sheet_name="Metadata", index=False)
-    
+
     excel_buffer.seek(0)
     excel_bytes = excel_buffer.read()
-    
-    return {
-        f"comparison_forecasts_{timestamp}.csv": all_forecasts.to_csv(index=False).encode("utf-8"),
-        f"comparison_status_{timestamp}.csv": status_df.to_csv(index=False).encode("utf-8"),
-        f"comparison_results_{timestamp}.xlsx": excel_bytes,
+
+    files = {
+        "comparison_forecasts_csv": all_forecasts.to_csv(index=False).encode("utf-8"),
+        "comparison_status_csv": status_df.to_csv(index=False).encode("utf-8"),
+        "comparison_results_xlsx": excel_bytes,
     }
+    filenames = {
+        "comparison_forecasts_csv": f"comparison_forecasts_{timestamp}.csv",
+        "comparison_status_csv": f"comparison_status_{timestamp}.csv",
+        "comparison_results_xlsx": f"comparison_results_{timestamp}.xlsx",
+    }
+    return files, filenames
 
 
 def create_eda_download(
@@ -115,24 +138,24 @@ def create_eda_download(
     processed_df: pd.DataFrame,
     col_config: Dict,
     eda_summary: Dict,
-) -> Dict[str, bytes]:
+) -> Tuple[Dict[str, bytes], Dict[str, str]]:
     """Create downloadable files for EDA results."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
+    timestamp = _timestamp()
+
     # Raw data
     raw_csv = raw_df.to_csv(index=False).encode("utf-8")
-    
+
     # Processed data
     proc_csv = processed_df.to_csv(index=False).encode("utf-8")
-    
+
     # Config
     config_df = pd.DataFrame([col_config])
     config_csv = config_df.to_csv(index=False).encode("utf-8")
-    
+
     # EDA summary
     summary_df = pd.DataFrame([eda_summary])
     summary_csv = summary_df.to_csv(index=False).encode("utf-8")
-    
+
     # Excel
     excel_buffer = io.BytesIO()
     with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
@@ -140,17 +163,25 @@ def create_eda_download(
         processed_df.to_excel(writer, sheet_name="Processed Data", index=False)
         config_df.to_excel(writer, sheet_name="Column Config", index=False)
         summary_df.to_excel(writer, sheet_name="EDA Summary", index=False)
-    
+
     excel_buffer.seek(0)
     excel_bytes = excel_buffer.read()
-    
-    return {
-        f"raw_data_{timestamp}.csv": raw_csv,
-        f"processed_data_{timestamp}.csv": proc_csv,
-        f"column_config_{timestamp}.csv": config_csv,
-        f"eda_summary_{timestamp}.csv": summary_csv,
-        f"eda_full_{timestamp}.xlsx": excel_bytes,
+
+    files = {
+        "raw_csv": raw_csv,
+        "processed_csv": proc_csv,
+        "config_csv": config_csv,
+        "summary_csv": summary_csv,
+        "eda_full_xlsx": excel_bytes,
     }
+    filenames = {
+        "raw_csv": f"raw_data_{timestamp}.csv",
+        "processed_csv": f"processed_data_{timestamp}.csv",
+        "config_csv": f"column_config_{timestamp}.csv",
+        "summary_csv": f"eda_summary_{timestamp}.csv",
+        "eda_full_xlsx": f"eda_full_{timestamp}.xlsx",
+    }
+    return files, filenames
 
 
 def create_model_card(
@@ -159,10 +190,10 @@ def create_model_card(
     status: Dict[str, str],
     config: Dict,
     metrics: Optional[Dict] = None,
-) -> Dict[str, bytes]:
+) -> Tuple[Dict[str, bytes], Dict[str, str]]:
     """Create a model card with all relevant info."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
+    timestamp = _timestamp()
+
     # Main report
     report = f"""# {model_name} Model Card
 
@@ -197,9 +228,9 @@ def create_model_card(
     
     report_bytes = report.encode("utf-8")
     
-    return {
-        f"{model_name}_model_card_{timestamp}.md": report_bytes,
-    }
+    files = {f"{model_name}_model_card": report_bytes}
+    filenames = {f"{model_name}_model_card": f"{model_name}_model_card_{timestamp}.md"}
+    return files, filenames
 
 
 def to_excel_bytes(sheets: Dict[str, pd.DataFrame]) -> bytes:

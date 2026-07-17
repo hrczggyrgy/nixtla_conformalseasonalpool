@@ -1,4 +1,3 @@
-
 """
 Autonomous, Robust & Universal ConformalSeasonalPool (CSP) Forecasting Script
 v2 -- Hardened for production use
@@ -20,6 +19,10 @@ Improvements over v1
 13. Unit-test-style self-checks (`_run_self_tests`) executed on import guard.
 14. Graceful degradation: returns partial results + a per-series status report
     instead of crashing the whole pipeline if some series fail.
+15. Per-series seasonality inference (instead of one global value).
+16. True observed-count tracking (before interpolation) for proper filtering.
+17. Local random generator (no global state pollution).
+18. Per-series batch isolation (failed series don't drag down their batch).
 """
 
 from __future__ import annotations
@@ -200,6 +203,10 @@ def _clip_outliers(s: pd.Series, iqr_mult: float) -> pd.Series:
 
 def _prepare_long_df(df: pd.DataFrame, date_col: str, value_col: str,
                       id_col: Optional[str], freq: str, cfg: CSPConfig) -> pd.DataFrame:
+    """
+    Returns long-format DataFrame with columns: unique_id, ds, y.
+    Also attaches true observed counts per series in attrs["true_obs_counts"].
+    """
     work = df.copy()
     work[date_col] = pd.to_datetime(work[date_col], errors="coerce", utc=False)
     if isinstance(work[date_col].dtype, pd.DatetimeTZDtype):
@@ -225,9 +232,12 @@ def _prepare_long_df(df: pd.DataFrame, date_col: str, value_col: str,
     work = work.groupby([id_col, "ds"], as_index=False)["y"].mean()
 
     regularized = []
+    true_counts = {}
     for uid, g in work.groupby(id_col):
         g = g.sort_values("ds").set_index("ds")
-        if g["y"].dropna().shape[0] < 2:
+        true_n = g["y"].dropna().shape[0]
+        true_counts[uid] = true_n
+        if true_n < 2:
             logger.warning(f"Series '{uid}' has <2 valid points; skipping.")
             continue
         full_idx = pd.date_range(g.index.min(), g.index.max(), freq=freq)
@@ -245,6 +255,7 @@ def _prepare_long_df(df: pd.DataFrame, date_col: str, value_col: str,
         return pd.DataFrame(columns=[id_col, "ds", "y"])
 
     result = pd.concat(regularized, ignore_index=True).dropna(subset=["y"])
+    result.attrs["true_obs_counts"] = true_counts
     return result
 
 
@@ -255,16 +266,16 @@ def run_csp_forecast(
     df: pd.DataFrame,
     cfg: Optional[CSPConfig] = None,
     **kwargs,
-) -> Tuple[pd.DataFrame, Dict[str, str], StatsForecast]:
+) -> Tuple[pd.DataFrame, Dict[str, str], List[StatsForecast]]:
     """
     Returns
     -------
     forecast_df : pd.DataFrame  -- forecasts for all series that succeeded
     status      : Dict[str,str] -- per-series status ("ok", "fallback", "dropped:<reason>")
-    sf          : StatsForecast -- last fitted StatsForecast instance
+    sf_models   : List[StatsForecast] -- fitted StatsForecast instances per batch
     """
     cfg = cfg or CSPConfig(**kwargs)
-    np.random.seed(cfg.random_seed)
+    rng = np.random.default_rng(cfg.random_seed)  # local RNG, no global state
 
     if df is None or df.empty:
         raise ValueError("Input DataFrame is empty or None.")
@@ -281,9 +292,10 @@ def run_csp_forecast(
     if long_df.empty:
         raise ValueError("No usable series remained after cleaning.")
 
-    counts = long_df.groupby("unique_id").size()
-    valid_ids = counts[counts >= cfg.min_obs_per_series].index
-    status: Dict[str, str] = {uid: "dropped:too_short" for uid in counts.index if uid not in valid_ids}
+    # Use TRUE observed counts (before interpolation) for length filtering
+    true_counts = long_df.attrs.get("true_obs_counts", {})
+    valid_ids = [uid for uid, n in true_counts.items() if n >= cfg.min_obs_per_series]
+    status: Dict[str, str] = {uid: "dropped:too_short" for uid in long_df["unique_id"].unique() if uid not in valid_ids}
     long_df = long_df[long_df["unique_id"].isin(valid_ids)]
 
     if long_df.empty:
@@ -291,24 +303,31 @@ def run_csp_forecast(
             f"All series had < {cfg.min_obs_per_series} observations after cleaning."
         )
 
-    y_all = long_df["y"].to_numpy()
-    season_length = _infer_season_length(freq, y_all)
+    # Per-series seasonality inference
+    season_lengths = {}
+    for uid, g in long_df.groupby("unique_id"):
+        season_lengths[uid] = _infer_season_length(freq, g["y"].to_numpy())
+
+    # Use majority vote as default for batch-level operations
+    from collections import Counter
+    season_length = Counter(season_lengths.values()).most_common(1)[0][0]
     season_length = max(season_length, 1)
 
     all_forecasts = []
     ids = long_df["unique_id"].unique().tolist()
     batches = [ids[i:i + cfg.max_series_per_batch] for i in range(0, len(ids), cfg.max_series_per_batch)]
 
-    sf = None
+    sf_models = []
     for batch_ids in batches:
         batch_df = long_df[long_df["unique_id"].isin(batch_ids)]
         batch_forecasts = []
         batch_status = {}
-        
+
         for uid in batch_ids:
             series_df = batch_df[batch_df["unique_id"] == uid]
+            sl = season_lengths.get(uid, season_length)
             try:
-                model = ConformalSeasonalPool(season_length=season_length)
+                model = ConformalSeasonalPool(season_length=sl)
                 sf = StatsForecast(models=[model], freq=freq, n_jobs=-1)
                 fcst = sf.forecast(df=series_df, h=cfg.h, level=cfg.levels)
                 batch_forecasts.append(fcst)
@@ -316,7 +335,7 @@ def run_csp_forecast(
             except Exception as e:
                 logger.warning(f"CSP failed on series '{uid}': {e}. Falling back to SeasonalNaive.")
                 try:
-                    fallback_model = SeasonalNaive(season_length=season_length)
+                    fallback_model = SeasonalNaive(season_length=sl)
                     sf = StatsForecast(models=[fallback_model], freq=freq, n_jobs=-1)
                     fcst = sf.forecast(df=series_df, h=cfg.h, level=cfg.levels)
                     batch_forecasts.append(fcst)
@@ -324,10 +343,11 @@ def run_csp_forecast(
                 except Exception as e2:
                     logger.error(f"Fallback also failed for series '{uid}': {e2}")
                     batch_status[uid] = f"dropped:error({e2})"
-        
+
         if batch_forecasts:
             all_forecasts.extend(batch_forecasts)
         status.update(batch_status)
+        sf_models.append(sf)
 
     if not all_forecasts:
         raise RuntimeError("All batches failed to produce forecasts (CSP and fallback).")
@@ -343,7 +363,7 @@ def run_csp_forecast(
         f"horizon={cfg.h}"
     )
 
-    return forecast_df, status, sf
+    return forecast_df, status, sf_models
 
 
 # --------------------------------------------------------------------------- #

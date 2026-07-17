@@ -1,7 +1,7 @@
 """Forecasting utilities for Streamlit app."""
 import pandas as pd
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 from csp_universal_forecast import CSPConfig, run_csp_forecast
 
@@ -11,6 +11,7 @@ class ForecastResult:
     forecast_df: pd.DataFrame
     status: Dict[str, str]
     model_name: str
+    config: Dict = field(default_factory=dict)
 
 
 def run_csp_with_config(
@@ -21,7 +22,6 @@ def run_csp_with_config(
     id_col: Optional[str] = None,
 ) -> ForecastResult:
     """Run CSP forecast with the given config and optional column overrides."""
-    # Create a copy of the config with column overrides
     cfg_copy = CSPConfig(
         h=cfg.h,
         levels=cfg.levels,
@@ -35,23 +35,33 @@ def run_csp_with_config(
         value_col=value_col,
         id_col=id_col,
     )
-    
+
     forecast_df, status, _ = run_csp_forecast(df, cfg=cfg_copy)
 
-    model_col = [c for c in forecast_df.columns if c not in ["unique_id", "ds"] and "-lo-" not in c and "-hi-" not in c]
+    model_col = [c for c in forecast_df.columns if c not in ["unique_id", "ds"] and not c.endswith(("-lo-", "-hi-"))]
     model_name = model_col[0] if model_col else "CSP"
 
     return ForecastResult(
         forecast_df=forecast_df,
         status=status,
         model_name=model_name,
+        config={
+            "h": cfg.h,
+            "levels": cfg.levels,
+            "min_obs_per_series": cfg.min_obs_per_series,
+            "max_series_per_batch": cfg.max_series_per_batch,
+            "outlier_clip": cfg.outlier_clip,
+            "outlier_iqr_mult": cfg.outlier_iqr_mult,
+            "random_seed": cfg.random_seed,
+            "verbose": cfg.verbose,
+        },
     )
 
 
 def get_model_name(forecast_df: pd.DataFrame) -> str:
     """Extract model name from forecast columns."""
     for c in forecast_df.columns:
-        if c not in ["unique_id", "ds"] and "-lo-" not in c and "-hi-" not in c:
+        if c not in ["unique_id", "ds"] and not c.endswith(("-lo-", "-hi-")):
             return c
     return "CSP"
 
@@ -75,13 +85,23 @@ def run_model_with_config(
     sf = StatsForecast(models=[model], freq=freq, n_jobs=-1)
     forecasts = sf.forecast(df=df, h=cfg.h, level=cfg.levels)
 
-    model_col = [c for c in forecasts.columns if c not in ["unique_id", "ds"] and "-lo-" not in c and "-hi-" not in c]
+    model_col = [c for c in forecasts.columns if c not in ["unique_id", "ds"] and not c.endswith(("-lo-", "-hi-"))]
     name = model_col[0] if model_col else model_name
 
     return ForecastResult(
         forecast_df=forecasts,
         status={uid: "ok" for uid in df["unique_id"].unique()},
         model_name=name,
+        config={
+            "h": cfg.h,
+            "levels": cfg.levels,
+            "min_obs_per_series": cfg.min_obs_per_series,
+            "max_series_per_batch": cfg.max_series_per_batch,
+            "outlier_clip": cfg.outlier_clip,
+            "outlier_iqr_mult": cfg.outlier_iqr_mult,
+            "random_seed": cfg.random_seed,
+            "verbose": cfg.verbose,
+        },
     )
 
 
@@ -126,7 +146,7 @@ def compute_backtest_metrics(
     forecast_df: pd.DataFrame,
     series_id: str,
 ) -> Optional[Dict[str, float]]:
-    """Compute backtest metrics for a single series."""
+    """Compute backtest metrics for a single series using naive last-window method."""
     hist = historical_df[historical_df["unique_id"] == series_id].sort_values("ds")
     fcst = forecast_df[forecast_df["unique_id"] == series_id].sort_values("ds")
 
@@ -139,7 +159,8 @@ def compute_backtest_metrics(
     if pred_col not in fcst.columns:
         return None
 
-    y_true = hist["y"].values[-len(fcst):]  # Align with forecast horizon
+    h = len(fcst)
+    y_true = hist["y"].values[-h:] if len(hist) >= h else hist["y"].values
     y_pred = fcst[pred_col].values
 
     if len(y_true) != len(y_pred):
@@ -172,9 +193,10 @@ def compute_interval_metrics(
     if lo_col not in fcst.columns or hi_col not in fcst.columns:
         return None
 
-    y_true = hist["y"].values[-len(fcst):]
-    lo = fcst[lo_col].values
-    hi = fcst[hi_col].values
+    h = len(fcst)
+    y_true = hist["y"].values[-h:] if len(hist) >= h else hist["y"].values
+    lo = fcst[f"{model_name}-lo-{level}"].values
+    hi = fcst[f"{model_name}-hi-{level}"].values
     pred = fcst[get_model_name(forecast_df)].values
 
     if len(y_true) != len(lo):
@@ -188,8 +210,12 @@ def compute_interval_metrics(
     alpha = level / 100.0
     pinball = np.mean(np.where(y_true < lo, (1 - alpha) * (lo - y_true), alpha * (y_true - hi)))
 
-    # Approximate CRPS (using uniform distribution within interval)
-    crps = np.mean((hi - lo) / 4 + (lo - y_true)**2 / (hi - lo) * (y_true < lo) + (y_true - hi)**2 / (hi - lo) * (y_true > hi))
+    # CRPS approximation (uniform distribution within interval)
+    crps = np.mean(
+        (hi - lo) / 4 
+        + (lo - y_true)**2 / (hi - lo) * (y_true < lo)
+        + (y_true - hi)**2 / (hi - lo) * (y_true > hi)
+    )
 
     return {
         f"Coverage_{level}%": coverage,

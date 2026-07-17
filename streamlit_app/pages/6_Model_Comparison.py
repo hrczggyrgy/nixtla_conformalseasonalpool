@@ -18,7 +18,7 @@ from streamlit_app.utils.forecasting import (
     compute_backtest_metrics,
     compute_interval_metrics,
 )
-from streamlit_app.utils.plotting import create_comparison_plot, create_metric_comparison_bar
+from streamlit_app.utils.plotting import create_all_models_comparison_plot, create_metric_comparison_bar
 from streamlit_app.utils.export import create_comparison_download
 from streamlit_app.config import SESSION_KEYS, DEFAULT_CSP_CONFIG
 
@@ -102,19 +102,7 @@ with run_col1:
             # Store results
             for model_key, result in results.items():
                 if result is not None:
-                    st.session_state[f"{model_key.lower()}_results"] = {
-                        "forecast_df": result.forecast_df,
-                        "status": result.status,
-                        "model_name": result.model_name,
-                        "config": {
-                            "h": cfg.h,
-                            "levels": cfg.levels,
-                            "min_obs_per_series": cfg.min_obs_per_series,
-                            "outlier_clip": cfg.outlier_clip,
-                            "outlier_iqr_mult": cfg.outlier_iqr_mult,
-                            "random_seed": cfg.random_seed,
-                        },
-                    }
+                    st.session_state[f"{model_key.lower()}_results"] = result
                 else:
                     st.session_state[f"{model_key.lower()}_results"] = None
             
@@ -124,15 +112,13 @@ with run_col1:
             for model_key in ALL_MODELS:
                 res = st.session_state.get(f"{model_key.lower()}_results")
                 if res:
-                    if res is not None:
-                        m = compute_backtest_metrics(pdf, res["forecast_df"], selected_series)
-                        if m:
-                            metrics[model_key] = m
-                        
-                        # Interval metrics for models that provide intervals
-                        im = compute_interval_metrics(pdf, res["forecast_df"], selected_series, level=95)
-                        if im:
-                            interval_metrics[model_key] = im
+                    m = compute_backtest_metrics(pdf, res.forecast_df, selected_series)
+                    if m:
+                        metrics[model_key] = m
+                    
+                    im = compute_interval_metrics(pdf, res.forecast_df, selected_series, level=95)
+                    if im:
+                        interval_metrics[model_key] = im
             
             if metrics:
                 st.session_state.comparison_metrics = metrics
@@ -164,14 +150,14 @@ if available_models:
     for i, model_key in enumerate(available_models):
         res = st.session_state[f"{model_key.lower()}_results"]
         with cols[i]:
-            status = res["status"].get(selected_series, "unknown")
+            status = res.status.get(selected_series, "unknown")
             if status == "ok":
                 st.success(f"{model_key}: {status}")
             elif status.startswith("fallback"):
                 st.warning(f"{model_key}: {status}")
             else:
                 st.error(f"{model_key}: {status}")
-            st.caption(f"Model: {res['model_name']}")
+            st.caption(f"Model: {res.model_name}")
     
     # Tier 1: Point Forecast Comparison
     st.divider()
@@ -276,14 +262,14 @@ if available_models:
     # Comparison plot - ALL models on one chart
     if available_models:
         st.divider()
-        st.subheader("📈 Forecast Overlay (C Forecast Overlay — All Models")
+        st.subheader("📈 Forecast Overlay — All Models")
         
         # Collect all available model forecasts
         model_forecasts = {}
         for model_key in available_models:
             res = st.session_state.get(f"{model_key.lower()}_results")
             if res:
-                model_forecasts[model_key] = res["forecast_df"]
+                model_forecasts[model_key] = res.forecast_df
         
         from streamlit_app.utils.plotting import create_all_models_comparison_plot
         fig = create_all_models_comparison_plot(
@@ -302,8 +288,8 @@ if available_models:
     for i, model_key in enumerate([m for m in ALL_MODELS if m in available_models]):
         with tabs[i]:
             res = st.session_state[f"{model_key.lower()}_results"]
-            fcst = res["forecast_df"][res["forecast_df"]['unique_id'] == selected_series]
-            pred_col = res["model_name"]
+            fcst = res.forecast_df[res.forecast_df['unique_id'] == selected_series]
+            pred_col = res.model_name
             display_cols = ['ds', pred_col]
             for level in sorted(cfg.levels):
                 lo = f"{pred_col}-lo-{level}"
@@ -313,7 +299,7 @@ if available_models:
             
             st.dataframe(fcst[display_cols].reset_index(drop=True), use_container_width=True, hide_index=True)
     
-    # Download
+    # Download - using new fixed-key pattern
     st.divider()
     st.subheader("Download Comparison Results")
     
@@ -329,28 +315,25 @@ if available_models:
     }
     
     # Build download with all available models
-    csp_res = st.session_state.get("csp_results", {})
-    sn_res = st.session_state.get("seasonalnaive_results", {})
-    arima_res = st.session_state.get("autoarima_results", {})
-    ets_res = st.session_state.get("autoets_results", {})
-    theta_res = st.session_state.get("autotheta_results", {})
+    csp_res = st.session_state.get("csp_results")
+    sn_res = st.session_state.get("seasonalnaive_results")
+    arima_res = st.session_state.get("autoarima_results")
+    ets_res = st.session_state.get("autoets_results")
+    theta_res = st.session_state.get("autotheta_results")
     
-    download_files = create_comparison_download(
-        csp_forecast=csp_res.get("forecast_df", pd.DataFrame()) if csp_res else pd.DataFrame(),
-        sn_forecast=sn_res.get("forecast_df", pd.DataFrame()) if sn_res else pd.DataFrame(),
-        csp_status=csp_res.get("status", {}) if csp_res else {},
-        sn_status=sn_res.get("status", {}) if sn_res else {},
+    download_files, download_names = create_comparison_download(
+        csp_forecast=csp_res.forecast_df if csp_res else pd.DataFrame(),
+        sn_forecast=sn_res.forecast_df if sn_res else pd.DataFrame(),
+        csp_status=csp_res.status if csp_res else {},
+        sn_status=sn_res.status if sn_res else {},
         config=config_dict,
     )
-    
-    csv_key = [k for k in download_files if "_forecasts_" in k and k.endswith(".csv")][0]
-    excel_key = [k for k in download_files if "_results_" in k and k.endswith(".xlsx")][0]
     
     c1, c2 = st.columns(2)
     with c1:
         st.download_button(
             "Comparison CSV",
-            data=download_files[csv_key],
+            data=download_files["comparison_forecasts_csv"],
             file_name=f"comparison_{selected_series}.csv",
             mime="text/csv",
             use_container_width=True,
@@ -358,7 +341,7 @@ if available_models:
     with c2:
         st.download_button(
             "Full Comparison Excel",
-            data=download_files[excel_key],
+            data=download_files["comparison_results_xlsx"],
             file_name=f"comparison_{selected_series}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
