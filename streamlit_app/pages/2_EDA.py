@@ -406,7 +406,14 @@ with st.expander("🔬 Advanced Diagnostics", expanded=False):
                         series_data, model="additive", period=period_guess, extrapolate_trend="freq"
                     )
                     
-                    fig_stl = go.Figure()
+                    from plotly.subplots import make_subplots
+                    fig_stl = make_subplots(
+                        rows=4, cols=1,
+                        subplot_titles=("Observed", "Trend", "Seasonal", "Residual"),
+                        shared_xaxes=True,
+                        vertical_spacing=0.05,
+                    )
+                    
                     components = [
                         ("Observed", decomp.observed, "#1f77b4"),
                         ("Trend", decomp.trend, "#ff7f0e"),
@@ -415,10 +422,23 @@ with st.expander("🔬 Advanced Diagnostics", expanded=False):
                     ]
                     
                     for i, (name, data, color) in enumerate(components, 1):
+                        # Handle both pandas Series/DataFrame and numpy arrays
+                        if hasattr(data, 'index'):
+                            x_vals = data.index
+                        else:
+                            x_vals = range(len(data))
+                        
+                        if hasattr(data, 'values'):
+                            y_vals = data.values
+                        else:
+                            y_vals = data
+                        
                         fig_stl.add_trace(go.Scatter(
-                            x=series_data.index if hasattr(series_data.index, '__iter__') else range(len(data)),
-                            y=data.values if hasattr(data, 'values') else data,
-                            mode="lines", name=name, line=dict(color=color, width=1.5),
+                            x=x_vals,
+                            y=y_vals,
+                            mode="lines",
+                            name=name,
+                            line=dict(color=color, width=1.5),
                         ), row=i, col=1)
                     
                     fig_stl.update_layout(
