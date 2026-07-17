@@ -48,7 +48,19 @@ with run_col1:
         with st.spinner("Running CSP..."):
             try:
                 csp_res = run_csp_with_config(pdf, cfg)
-                st.session_state.csp_results = csp_res
+                st.session_state.csp_results = {
+                    "forecast_df": csp_res.forecast_df,
+                    "status": csp_res.status,
+                    "model_name": csp_res.model_name,
+                    "config": {
+                        "h": cfg.h,
+                        "levels": cfg.levels,
+                        "min_obs_per_series": cfg.min_obs_per_series,
+                        "outlier_clip": cfg.outlier_clip,
+                        "outlier_iqr_mult": cfg.outlier_iqr_mult,
+                        "random_seed": cfg.random_seed,
+                    },
+                }
                 st.success("CSP completed")
             except Exception as e:
                 st.error(f"CSP failed: {e}")
@@ -57,7 +69,19 @@ with run_col1:
         with st.spinner("Running SeasonalNaive..."):
             try:
                 sn_res = run_seasonal_naive_with_config(pdf, cfg)
-                st.session_state.sn_results = sn_res
+                st.session_state.sn_results = {
+                    "forecast_df": sn_res.forecast_df,
+                    "status": sn_res.status,
+                    "model_name": sn_res.model_name,
+                    "config": {
+                        "h": cfg.h,
+                        "levels": cfg.levels,
+                        "min_obs_per_series": cfg.min_obs_per_series,
+                        "outlier_clip": cfg.outlier_clip,
+                        "outlier_iqr_mult": cfg.outlier_iqr_mult,
+                        "random_seed": cfg.random_seed,
+                    },
+                }
                 st.success("SeasonalNaive completed")
             except Exception as e:
                 st.error(f"SeasonalNaive failed: {e}")
@@ -140,9 +164,14 @@ if st.session_state.csp_results and st.session_state.sn_results:
         metrics_df = pd.DataFrame(metrics).T.round(4)
         st.dataframe(metrics_df, use_container_width=True)
         
-        # Chart
-        metrics_df = pd.DataFrame(metrics).T.round(4)
-        fig_metrics = create_metric_comparison_bar(metrics_df, "MAE")
+        # Chart - convert to format expected by plotting function
+        chart_rows = []
+        for model_name, model_metrics in metrics.items():
+            row = {"Series": selected_series, "Model": model_name}
+            row.update(model_metrics)
+            chart_rows.append(row)
+        chart_df = pd.DataFrame(chart_rows)
+        fig_metrics = create_metric_comparison_bar(chart_df, "MAE")
         st.plotly_chart(fig_metrics, use_container_width=True)
         
         # Best model

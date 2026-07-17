@@ -35,10 +35,10 @@ st.subheader("Available Downloads")
 if has_csp:
     with st.expander("CSP Forecast Results", expanded=True):
         res = st.session_state.csp_results
-        fcst_df = res["forecast_df"]
-        status = res["status"]
-        model_name = res["model_name"]
-        config = res["config"]
+        fcst_df = res.forecast_df
+        status = res.status
+        model_name = res.model_name
+        config = res.config
         
         st.write(f"Series: {fcst_df['unique_id'].nunique()} | Forecasts: {len(fcst_df):,} rows")
         
@@ -58,10 +58,10 @@ if has_csp:
 if has_sn:
     with st.expander("SeasonalNaive Forecast Results", expanded=True):
         res = st.session_state.sn_results
-        fcst_df = res["forecast_df"]
-        status = res["status"]
-        model_name = res["model_name"]
-        config = res["config"]
+        fcst_df = res.forecast_df
+        status = res.status
+        model_name = res.model_name
+        config = res.config
         
         st.write(f"Series: {fcst_df['unique_id'].nunique()} | Forecasts: {len(fcst_df):,} rows")
         
@@ -85,11 +85,11 @@ if has_both:
         sn_res = st.session_state.sn_results
         
         download_files = create_comparison_download(
-            csp_forecast=csp_res["forecast_df"],
-            sn_forecast=sn_res["forecast_df"],
-            csp_status=csp_res["status"],
-            sn_status=sn_res["status"],
-            config=csp_res["config"],
+            csp_forecast=csp_res.forecast_df,
+            sn_forecast=sn_res.forecast_df,
+            csp_status=csp_res.status,
+            sn_status=sn_res.status,
+            config=csp_res.config,
         )
         
         cols = st.columns(3)
