@@ -27,6 +27,16 @@ if st.session_state.raw_df is None:
 
 df = st.session_state.raw_df
 
+# --- OHLC detection hint ---
+_ohlc_candidates = [c.lower() for c in df.columns]
+_ohlc_cols = [c for c in df.columns if c.lower() in ("open", "high", "low", "close", "adj close", "adj_close", "volume")]
+if len(_ohlc_cols) >= 3:
+    st.info(
+        "📊 **OHLC/financial data detected.** This app forecasts a single numeric value column. "
+        "Please select one column as your target — typically **Close** (or Adj Close) is recommended. "
+        "Columns like Open, High, Low and Volume will be ignored by the forecasting model."
+    )
+
 # Auto-detect columns with confidence
 detected = auto_detect_columns(df)
 
@@ -34,6 +44,12 @@ detected = auto_detect_columns(df)
 for k in ["date_col", "value_col", "id_col"]:
     if k not in detected:
         detected[k] = None
+
+# If OHLC detected and auto-detection picked a non-close column, override suggestion to 'close'
+if len(_ohlc_cols) >= 3:
+    close_col = next((c for c in df.columns if c.lower() in ("close", "adj close", "adj_close")), None)
+    if close_col and detected.get("value_col") not in (close_col,):
+        detected["value_col"] = close_col
 
 def get_detection_confidence(df, col_name, col_type):
     """Calculate confidence score for auto-detection."""
@@ -172,7 +188,7 @@ with c2:
         numeric_cols,
         index=numeric_cols.index(detected["value_col"]) if detected["value_col"] in numeric_cols else 0,
         key="col_value",
-        help="Numeric target variable to forecast"
+        help="Numeric target variable to forecast. For OHLC data, select Close (or Adj Close)."
     )
 
 with c3:

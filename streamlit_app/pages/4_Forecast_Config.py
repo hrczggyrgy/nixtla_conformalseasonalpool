@@ -193,8 +193,8 @@ st.divider()
 c1, c2 = st.columns(2)
 with c1:
     if st.button("Go to Forecast Results", use_container_width=True):
-        st.switch_page("Forecast Results")
+        st.switch_page("streamlit_app/pages/5_Forecast_Results.py")
 
 with c2:
     if st.button("Go to Model Comparison", use_container_width=True):
-        st.switch_page("Model Comparison")
+        st.switch_page("streamlit_app/pages/6_Model_Comparison.py")
