@@ -1,7 +1,10 @@
 """App shell components: top bar, sidebar stepper, progress tracking."""
 import streamlit as st
 from streamlit_app.config import EXPORT_PRESETS, VALIDATION_RULES
-
+st.caption(
+    "Powered by Conformal Seasonal Pool (CSP), a model introduced by "
+    "Valery Manokhin and implemented in Nixtla's StatsForecast."
+)
 STEPS = [
     {"id": "home", "label": "Home", "icon": "🏠", "page": "0_Home.py"},
     {"id": "upload", "label": "Upload", "icon": "📤", "page": "1_Data_Upload.py"},
