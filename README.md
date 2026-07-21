@@ -1,16 +1,11 @@
-# CSP Universal Forecast
+# CSP Forecast
 
 live app: https://nixtla-conformalseasonalpool.streamlit.app/
 
-Autonomous, robust, and universal time-series forecasting script built on
-Nixtla's **ConformalSeasonalPool (CSP)** — a training-free forecasting model
-with natively conformal (calibrated, distribution-free) prediction intervals.
-
-Point it at **any** DataFrame that has a date column and a numeric value
-column — regardless of column names, frequency, or whether it's a single
-series or a multi-series panel — and it will auto-detect everything, clean
-the data, infer seasonality, fit the model, and return forecasts with
-prediction intervals.
+Autonomous, robust time-series forecasting script built on
+Conformal Seasonal Pool (CSP), a training-free forecasting model introduced by
+Valery Manokhin and implemented in Nixtla's StatsForecast library, with
+natively conformal (calibrated, distribution-free) prediction intervals.
 
 ---
 
