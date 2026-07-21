@@ -1,10 +1,7 @@
 """App shell components: top bar, sidebar stepper, progress tracking."""
 import streamlit as st
 from streamlit_app.config import EXPORT_PRESETS, VALIDATION_RULES
-st.caption(
-    "Powered by Conformal Seasonal Pool (CSP), a model introduced by "
-    "Valery Manokhin and implemented in Nixtla's StatsForecast."
-)
+
 STEPS = [
     {"id": "home", "label": "Home", "icon": "🏠", "page": "0_Home.py"},
     {"id": "upload", "label": "Upload", "icon": "📤", "page": "1_Data_Upload.py"},
@@ -72,9 +69,13 @@ def get_step_status(step_id: str) -> str:
 def render_top_bar():
     """Render top bar with app title, dataset info, and reset button."""
     cols = st.columns([3, 2, 1, 1])
-    
+
     with cols[0]:
         st.markdown("## Automated Forecasting")
+        st.caption(
+            "Powered by Conformal Seasonal Pool (CSP), a model introduced by "
+            "Valery Manokhin and implemented in Nixtla's StatsForecast."
+        )
     
     with cols[1]:
         if st.session_state.raw_df is not None:
