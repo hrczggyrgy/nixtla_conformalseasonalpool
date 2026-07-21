@@ -17,7 +17,7 @@ if "forecast_cfg" not in st.session_state or st.session_state.forecast_cfg is No
     st.session_state.forecast_cfg = CSPConfig(**DEFAULT_CSP_CONFIG)
 
 st.set_page_config(
-    page_title="CSP Universal Forecast — Home",
+    page_title="CSP Forecast — Home",
     page_icon="",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -32,6 +32,10 @@ st.markdown("""
 
 Upload a CSV, auto-detect columns and frequency, generate forecasts with calibrated prediction intervals.
 """)
+st.caption(
+    "Powered by Conformal Seasonal Pool (CSP), a model introduced by "
+    "Valery Manokhin and implemented in Nixtla's StatsForecast."
+)
 
 # Quick action buttons
 col1, col2 = st.columns(2, gap="large")
