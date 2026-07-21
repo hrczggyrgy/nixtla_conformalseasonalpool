@@ -234,7 +234,28 @@ INFO | All self-tests passed.
 - Forecast horizons are sampled independently per step (not jointly coherent trajectories), consistent with CSP's design.
 
 ---
+## Attribution and Citation
 
+This project uses **Conformal Seasonal Pool (CSP)**, a model introduced by
+**Valery Manokhin** and implemented in **Nixtla's StatsForecast** library.
+
+### Original paper
+Manokhin, V. (2026). *Training-Free Probabilistic Time-Series Forecasting with Conformal Seasonal Pools*. arXiv:2605.03789. https://doi.org/10.48550/arXiv.2605.03789
+
+### StatsForecast documentation
+Nixtla StatsForecast documentation for ConformalSeasonalPool (CSP):
+https://nixtlaverse.nixtla.io/statsforecast/docs/models/conformalseasonalpool.html
+
+### BibTeX
+```bibtex
+@article{manokhin2026csp,
+  title={Training-Free Probabilistic Time-Series Forecasting with Conformal Seasonal Pools},
+  author={Manokhin, Valery},
+  journal={arXiv preprint arXiv:2605.03789},
+  year={2026},
+  doi={10.48550/arXiv.2605.03789}
+}
+```
 ## License
 
 Use freely within your own projects. No warranty provided — validate model
